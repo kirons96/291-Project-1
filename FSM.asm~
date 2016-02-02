@@ -23,7 +23,7 @@ org 0003H
 
 ; Timer/Counter 0 overflow interrupt vector
 org 000BH
-	reti
+	ljmp Timer0_ISR
 
 ; External interrupt 1 vector (not used in this code)
 org 0013H
@@ -55,6 +55,39 @@ cseg
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
+
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
+    setb EA   ; Enable Global interrupts
+	ret
+
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P3.7 ;
+;---------------------------------;
+Timer0_ISR:
+	; Define a latency correction for the timer reload
+	CORRECTION EQU (4+4+2+2+4+4) ; lcall+ljmp+clr+mov+mov+setb
+	; In mode 1 we need to reload the timer.
+	clr TR0
+	mov TH0, #high(TIMER0_RELOAD+CORRECTION)
+	mov TL0, #low(TIMER0_RELOAD+CORRECTION)
+	setb TR0
+	cpl SOUND_OUT ; Connect speaker to P3.7!
+	reti
 
 Timer2_Init:
 	mov T2CON, #0 ; Stop timer.  Autoreload mode.
@@ -119,17 +152,17 @@ Timer2_ISR_done:
 ; loop.                           ;
 ;---------------------------------;
 main:
-	; Initialization
-    mov SP, #7FH
-    mov PMOD, #0 ; Configure all ports in bidirectional mode
-    lcall Timer2_Init
-    lcall LCD_4BIT
-    ; For convenience a few handy macros are included in 'LCD_4bit.inc':
-    setb half_seconds_flag
-	mov SEC, #0x00
-	
+; Initialization
+mov SP, #7FH
+mov PMOD, #0 ; Configure all ports in bidirectional mode
+lcall Timer2_Init
+lcall LCD_4BIT
+; For convenience a few handy macros are included in 'LCD_4bit.inc':
+setb half_seconds_flag
+mov SEC, #0x00
+
 	; After initialization the program stays in this 'forever' loop
-forever:
+	forever:
 	jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
@@ -142,7 +175,7 @@ forever:
 	mov Count1ms+1, a
 	; Now clear the BCD counter
 	mov SEC, #0x00
-	mov CURRENT_STATE, #0x00
+	mov CURRENT_STATE, #0
 	
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
