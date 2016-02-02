@@ -1,7 +1,9 @@
 2 Subteams:
 
-Wiring - wiring the diagram, calibration, ssr
+Wiring - wiring the diagram, calibration, ssr:
+Ken, Ciaran, Viral 
 
-Coding - putting Tristan's code together, doing the math in python, FSM
+Coding - putting Tristan's code together, doing the math in python, FSM:
+Tristan, Kiron, June  
 
-Test Change
+
