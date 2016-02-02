@@ -8,9 +8,10 @@ TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
-BOOT_BUTTON   equ P4.5
-SOUND_OUT     equ P3.7
-UPDOWN        equ P0.0
+BOOT_BUTTON     equ P4.5
+SOUND_OUT       equ P3.7
+;PWM 			EQU P0.0
+START_BUTTON 	EQU P0.3
 
 ; Reset vector
 org 0000H
@@ -50,8 +51,6 @@ bseg
 half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
 
 cseg 
-;PWM 			EQU P0.0
-START_BUTTON 	EQU P0.3
 
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
@@ -105,12 +104,7 @@ Inc_Done:
 	mov Count1ms+1, a
 	; Increment the BCD counter
 	mov a, SEC
-	jnb UPDOWN, Timer2_ISR_decrement
 	add a, #0x01
-	sjmp Timer2_ISR_da
-Timer2_ISR_decrement:
-	add a, #0x99
-Timer2_ISR_da:
 	da a
 	mov SEC, a
 	
@@ -148,6 +142,8 @@ forever:
 	mov Count1ms+1, a
 	; Now clear the BCD counter
 	mov SEC, #0x00
+	mov CURRENT_STATE, #0
+	
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
 loop_a:
@@ -183,7 +179,7 @@ STATE2:
 		mov PWM, #20
 		mov a, #60
 		clr c
-		subb a, SEC ;need interrupts
+		subb a, SEC
 		jnc STATE2_DONE
 		mov CURRENT_STATE, #3
 STATE2_DONE:
@@ -208,7 +204,7 @@ STATE4:
 		mov PWM, #20
 		mov a, #45
 		clr c
-		subb a, SEC ;need interrupts
+		subb a, SEC
 		jnc STATE4_DONE
 		mov CURRENT_STATE, #5
 STATE4_DONE:
