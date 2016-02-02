@@ -1,4 +1,8 @@
-	mov a, state
+dseg at 30h
+state:	ds 1
+
+
+		mov a, state
 state0:
 		cjne a, #0, state1
 		mov pwm, #0
