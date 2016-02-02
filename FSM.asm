@@ -106,10 +106,6 @@ Timer0_ISR:
 	
 	;**************PWM**************
 	
-	mov a, PWM_COUNTER
-	add a, #0x01
-	da a
-	mov PWM_COUNTER, a
 	
 	;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
 
@@ -125,21 +121,28 @@ CHECK_LOW:
 	mov a, PWM_COUNTER
 	cjne a, PWM_LOW, FINISH_PWM_FLAG_CHECK
 	;PWM_COUNTER = PWM_LOW
-	setb PWM_PIN
+	clr PWM_PIN
 	ljmp FINISH_PWM_FLAG_CHECK
 CHECK_HIGH:
 	;PWM IS HIGH
 	mov a, PWM_COUNTER
 	cjne a, PWM_HIGH, FINISH_PWM_FLAG_CHECK
 	;PWM_COUNTER = PWM_HIGH
-	setb PWM_PIN	
-FINISH_PWM_FLAG_CHECK:
-	
+	;clr PWM_PIN	
+
+FINISH_PWM_INCREMENT: 
+
 	mov a, PWM_COUNTER
+	add a, #0x01
+	da a
+	mov PWM_COUNTER, a
+
 	cjne a, #100, FINISH_PWM
 	;PIN_COUNTER has reached 100
-	clr PWM_PIN	
-	
+	setb PWM_PIN	
+
+	mov PWM_COUNTER, #0 ;reset the counter 	
+
 FINISH_PWM:
 	
 	pop psw
