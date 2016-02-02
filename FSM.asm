@@ -8,9 +8,10 @@ TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
-BOOT_BUTTON   equ P4.5
-SOUND_OUT     equ P3.7
-UPDOWN        equ P0.0
+BOOT_BUTTON     EQU P4.5
+SOUND_OUT       EQU P3.7
+;PWM 			EQU P0.0
+START_BUTTON 	EQU P0.3
 
 ; Reset vector
 org 0000H
@@ -22,7 +23,7 @@ org 0003H
 
 ; Timer/Counter 0 overflow interrupt vector
 org 000BH
-	reti
+	ljmp Timer0_ISR
 
 ; External interrupt 1 vector (not used in this code)
 org 0013H
@@ -50,12 +51,43 @@ bseg
 half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
 
 cseg 
-;PWM 			EQU P0.0
-START_BUTTON 	EQU P0.3
 
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
+
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
+    setb EA   ; Enable Global interrupts
+	ret
+
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P3.7 ;
+;---------------------------------;
+Timer0_ISR:
+	; Define a latency correction for the timer reload
+	CORRECTION EQU (4+4+2+2+4+4) ; lcall+ljmp+clr+mov+mov+setb
+	; In mode 1 we need to reload the timer.
+	clr TR0
+	mov TH0, #high(TIMER0_RELOAD+CORRECTION)
+	mov TL0, #low(TIMER0_RELOAD+CORRECTION)
+	setb TR0
+	cpl SOUND_OUT ; Connect speaker to P3.7!
+	reti
 
 Timer2_Init:
 	mov T2CON, #0 ; Stop timer.  Autoreload mode.
@@ -105,12 +137,7 @@ Inc_Done:
 	mov Count1ms+1, a
 	; Increment the BCD counter
 	mov a, SEC
-	jnb UPDOWN, Timer2_ISR_decrement
 	add a, #0x01
-	sjmp Timer2_ISR_da
-Timer2_ISR_decrement:
-	add a, #0x99
-Timer2_ISR_da:
 	da a
 	mov SEC, a
 	
@@ -126,15 +153,17 @@ Timer2_ISR_done:
 ;---------------------------------;
 main:
 	; Initialization
-    mov SP, #7FH
-    mov PMOD, #0 ; Configure all ports in bidirectional mode
-    lcall Timer2_Init
-    lcall LCD_4BIT
-    ; For convenience a few handy macros are included in 'LCD_4bit.inc':
-    setb half_seconds_flag
+	mov SP, #7FH
+	mov PMOD, #0 ; Configure all ports in bidirectional mode
+    lcall Timer0_Init
+	lcall Timer2_Init
+	lcall LCD_4BIT
+	; For convenience a few handy macros are included in 'LCD_4bit.inc':
+	setb half_seconds_flag
 	mov SEC, #0x00
-	
+
 	; After initialization the program stays in this 'forever' loop
+
 forever:
 	jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
@@ -148,6 +177,8 @@ forever:
 	mov Count1ms+1, a
 	; Now clear the BCD counter
 	mov SEC, #0x00
+	mov CURRENT_STATE, #0
+	
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
 loop_a:
@@ -155,73 +186,67 @@ loop_a:
 loop_b:
     clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
 
-
-		mov a, CURRENT_STATE
+	mov a, CURRENT_STATE
 STATE0:
-		cjne a, #0, STATE1
-		mov PWM, #0
-		jb START_BUTTON, STATE0_DONE
-		lcall Wait_Milli_Seconds(#50); debounce time
-		jb START_BUTTON, STATE0_DONE
-		jnb START_BUTTON, $ ; Wait for key release
-		mov CURRENT_STATE, #1
+	cjne a, #0, STATE1
+	mov PWM, #0
+	jb START_BUTTON, STATE0_DONE
+	lcall Wait_Milli_Seconds(#50); debounce time
+	jb START_BUTTON, STATE0_DONE
+	jnb START_BUTTON, $ ; Wait for key release
+	mov CURRENT_STATE, #1
 STATE0_DONE:
-		ljmp forever
+	ljmp forever
 STATE1:
-		cjne a, #1, STATE2
-		mov PWM, #100
-		mov SEC, #0
-		mov a, #150
-		clr c
-		subb a, TEMP
-		jnc STATE1_DONE
-		mov CURRENT_STATE, #2
+	cjne a, #1, STATE2
+	mov PWM, #100
+	mov SEC, #0
+	mov a, #150
+	clr c
+	subb a, TEMP
+	jnc STATE1_DONE
+	mov CURRENT_STATE, #2
 STATE1_DONE:
-		ljmp forever
+	ljmp forever
 STATE2:
-		cjne a, #2, STATE3
-		mov PWM, #20
-		mov a, #60
-		clr c
-		subb a, SEC ;need interrupts
-		jnc STATE2_DONE
-		mov CURRENT_STATE, #3
+	cjne a, #2, STATE3
+	mov PWM, #20
+	mov a, #60
+	clr c
+	subb a, SEC
+	jnc STATE2_DONE
+	mov CURRENT_STATE, #3
 STATE2_DONE:
-		ljmp forever
-
-;NEW CODE
-
+	ljmp forever
 STATE3:
-		cjne a, #3, STATE4
-		mov PWM, #100
-		mov SEC, #0
-		mov a, #220
-		clr c
-		subb a, TEMP
-		jnc STATE3_DONE
-		mov CURRENT_STATE, #4
+	cjne a, #3, STATE4
+	mov PWM, #100
+	mov SEC, #0
+	mov a, #220
+	clr c
+	subb a, TEMP
+	jnc STATE3_DONE
+	mov CURRENT_STATE, #4
 STATE3_DONE:
-		ljmp forever
-
+	ljmp forever
 STATE4:
-		cjne a, #4, STATE5
-		mov PWM, #20
-		mov a, #45
-		clr c
-		subb a, SEC ;need interrupts
-		jnc STATE4_DONE
-		mov CURRENT_STATE, #5
+	cjne a, #4, STATE5
+	mov PWM, #20
+	mov a, #45
+	clr c
+	subb a, SEC
+	jnc STATE4_DONE
+	mov CURRENT_STATE, #5
 STATE4_DONE:
-		ljmp forever
-
+	ljmp forever
 STATE5:
-		cjne a, #5, forever
-		mov PWM, #0
-		mov SEC, #0
-		mov a, #60
-		clr c
-		subb a, TEMP
-		jnc STATE5_DONE
-		mov CURRENT_STATE, #0
+	cjne a, #5, forever
+	mov PWM, #0
+	mov SEC, #0
+	mov a, #60
+	clr c
+	subb a, TEMP
+	jnc STATE5_DONE
+	mov CURRENT_STATE, #0
 STATE5_DONE:
-		ljmp forever
+	ljmp forever
