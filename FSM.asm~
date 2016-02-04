@@ -58,7 +58,9 @@ PWM_HIGH:		ds 1
 
 ;BEEPER FEEDBACK VARIABLES
 SHORT_BEEP:		ds 1
+SHORT_BEEP_COUNTER: ds 1
 LONG_BEEP:		ds 1
+LONG_BEEP_COUNTER: ds 1
 
 bseg
 half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
@@ -111,12 +113,15 @@ Timer0_ISR:
 	push acc
 	push psw
 	
-	;**************BEEPER**************
+
+	;************BEEPER************
 	
 CHECK_SHORT_BEEP:
 	mov a, SHORT_BEEP
 	cjne a, #0x01, CHECK_LONG_BEEP
 	;SHORT BEEP ON
+	
+	cpl SOUND_OUT	
 
 	ljmp CHECK_OFF
 CHECK_LONG_BEEP:
@@ -125,7 +130,6 @@ CHECK_LONG_BEEP:
 	;LONG BEEP ON
 
 	;**************PWM**************
-	
 	
 	;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
 
@@ -189,7 +193,7 @@ Timer2_Init:
 ;---------------------------------;
 Timer2_ISR:
 	clr TF2  ; Timer 2 doesn't clear TF2 automatically in ISR
-	cpl P3.6 ; To check the interrupt rate with oscilloscope. It must be a 1 ms pulse.
+	;cpl P3.6 ; To check the interrupt rate with oscilloscope. It must be a 1 ms pulse.
 	
 	; The two registers used in the ISR must be saved in the stack
 	push acc
@@ -211,7 +215,26 @@ Inc_Done:
 	; 500 milliseconds have passed.  Set a flag so the main program knows
 	setb half_seconds_flag ; Let the main program know half second had passed
 	cpl TR1 ; This line makes a beep-silence-beep-silence sound
+
+	;************BEEPER************
+
+	mov a, SHORT_BEEP
+	cjne a, #0x01, CHECK_LONG_BEEP_2
+	;SHORT BEEP ON
+	
+	mov a, SHORT_BEEP_COUNTER	
+	cjne a, #0x02, FINISH_BEEPER 
+	;STOP SHORT BEEP
+	mov a, #0x00
+	mov SHORT_BEEP, a
+	mov SHORT_BEEP_COUNTER, a
+CHECK_LONG_BEEP_2:
+
+FINISH_BEEPER:
 	; Reset the milli-seconds counter, it is a 16-bit variable
+
+	;************COUNTER************
+
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
@@ -248,7 +271,9 @@ main:
 	mov PWM_LOW, #20
 	mov PWM_HIGH, #100
 	mov SHORT_BEEP, #0
+	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
+	mov LONG_BEEP_COUNTER, #0
 
 	; After initialization the program stays in this 'forever' loop
 
@@ -263,13 +288,15 @@ forever:
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
-	; Now clear the BCD counter
+
 	mov SEC, #0x00
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
 	mov PWM_FLAG, PWM_OFF
 	mov SHORT_BEEP, #0
+	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
+	mov LONG_BEEP_COUNTER, #0
 
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
