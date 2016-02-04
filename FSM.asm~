@@ -44,14 +44,21 @@ org 002BH
 dseg at 30h
 Count1ms:     	ds 2 ; Used to determine when half second has passed
 CURRENT_STATE:	ds 1 ;current state 
+
+;FSM VARIABLES
 SEC:			ds 1 ;timer
 TEMP:			ds 1 ;temperature
 
+;PWM VARIABLES
 PWM_FLAG:		ds 1 ;
 PWM_COUNTER:	ds 1 ;timing
 PWM_OFF:		ds 1 ;constants
 PWM_LOW:		ds 1
 PWM_HIGH:		ds 1
+
+;BEEPER FEEDBACK VARIABLES
+SHORT_BEEP:		ds 1
+LONG_BEEP:		ds 1
 
 bseg
 half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
@@ -104,6 +111,19 @@ Timer0_ISR:
 	push acc
 	push psw
 	
+	;**************BEEPER**************
+	
+CHECK_SHORT_BEEP:
+	mov a, SHORT_BEEP
+	cjne a, #0x01, CHECK_LONG_BEEP
+	;SHORT BEEP ON
+
+	ljmp CHECK_OFF
+CHECK_LONG_BEEP:
+	mov a, LONG_BEEP
+	cjne a, #0x01, CHECK_OFF
+	;LONG BEEP ON
+
 	;**************PWM**************
 	
 	
@@ -130,8 +150,7 @@ CHECK_HIGH:
 	;PWM_COUNTER = PWM_HIGH
 	;clr PWM_PIN	
 
-FINISH_PWM_INCREMENT: 
-
+FINISH_PWM_FLAG_CHECK: 
 	mov a, PWM_COUNTER
 	add a, #0x01
 	da a
@@ -144,7 +163,6 @@ FINISH_PWM_INCREMENT:
 	mov PWM_COUNTER, #0 ;reset the counter 	
 
 FINISH_PWM:
-	
 	pop psw
 	pop acc
 	
@@ -229,7 +247,9 @@ main:
 	mov PWM_OFF, #0
 	mov PWM_LOW, #20
 	mov PWM_HIGH, #100
-	
+	mov SHORT_BEEP, #0
+	mov LONG_BEEP, #0
+
 	; After initialization the program stays in this 'forever' loop
 
 forever:
@@ -248,7 +268,9 @@ forever:
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
 	mov PWM_FLAG, PWM_OFF
-	
+	mov SHORT_BEEP, #0
+	mov LONG_BEEP, #0
+
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
 loop_a:
