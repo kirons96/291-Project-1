@@ -113,8 +113,20 @@ Timer0_ISR:
 	push acc
 	push psw
 	
-
+;************BEEPER************
 	
+CHECK_SHORT_BEEP:
+	mov a, SHORT_BEEP
+	cjne a, #0x01, CHECK_LONG_BEEP
+	;SHORT BEEP ON
+	
+	cpl SOUND_OUT	
+
+	ljmp CHECK_OFF
+CHECK_LONG_BEEP:
+	mov a, LONG_BEEP
+	cjne a, #0x01, CHECK_OFF
+	;LONG BEEP ON
 
 	;**************PWM**************
 	
@@ -157,7 +169,6 @@ FINISH_PWM:
 	pop psw
 	pop acc
 	
-	cpl SOUND_OUT ; Connect speaker to P3.7!
 	reti
 
 Timer2_Init:
@@ -201,22 +212,20 @@ Inc_Done:
 	
 	; 500 milliseconds have passed.  Set a flag so the main program knows
 	setb half_seconds_flag ; Let the main program know half second had passed
-	cpl TR1 ; This line makes a beep-silence-beep-silence sound
+	;cpl TR1 ; This line makes a beep-silence-beep-silence sound
 
 	;************BEEPER************
 
 	mov a, SHORT_BEEP
-	cjne a, #0x01, CHECK_LONG_BEEP
+	cjne a, #0x01, CHECK_LONG_BEEP_2
 
 	;SHORT BEEP ON, increment counter
-
-	setb SOUND_OUT
 
 	mov a, SHORT_BEEP_COUNTER
 	add a, #0x01
 	mov SHORT_BEEP_COUNTER, a
 
-	cjne a, #0x03, FINISH_BEEPER 
+	cjne a, #0x02, FINISH_BEEPER 
 
 	;STOP SHORT BEEP
 	mov a, #0x00
@@ -224,9 +233,7 @@ Inc_Done:
 	mov SHORT_BEEP_COUNTER, a
 	clr SOUND_OUT
 
-	; DO THIS WITH COMPLEMENT	
-
-CHECK_LONG_BEEP:
+CHECK_LONG_BEEP_2:
 	mov a, LONG_BEEP
 	cjne a, #0x01, CHECK_OFF
 	;LONG BEEP ON
@@ -270,7 +277,7 @@ main:
 	mov PWM_OFF, #0
 	mov PWM_LOW, #20
 	mov PWM_HIGH, #100
-	mov SHORT_BEEP, #0x01
+	mov SHORT_BEEP, #0x00
 	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
 	mov LONG_BEEP_COUNTER, #0
@@ -314,6 +321,7 @@ STATE0:
 	jb START_BUTTON, STATE0_DONE
 	jnb START_BUTTON, $ ; Wait for key release
 	mov CURRENT_STATE, #1
+	mov SHORT_BEEP, #0x01 ;short beep enabled
 STATE0_DONE:
 	ljmp forever
 STATE1:
