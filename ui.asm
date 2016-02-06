@@ -51,9 +51,14 @@ hour_counter: ds 1
 alarm_second: ds 1 ;Holds the alarm digits
 alarm_minute: ds 1
 alarm_hour: ds 1
-buffer_second: ds 1 ;Buffer for user entry
-buffer_minute: ds 1
-buffer_hour: ds 1
+buffer_second: ds 2 ;Buffer for user entry
+buffer_minute: ds 2
+buffer_hour: ds 2
+soak_temp: ds 1
+soak_time: ds 1
+reflow_temp: ds 1
+reflow_time: ds 1
+
 number_of_beeps: ds 1
 bseg
 seconds_flag: dbit 1 ; Set to one in the ISR every time 1000 ms had passed
@@ -79,16 +84,6 @@ USR_SET equ P2.6
 USR_UP equ P2.3
 USR_DOWN equ P2.0
 USR_ALRM equ P0.6
-; Output to arduino
-SECONDS1 equ P1.0
-SECONDS2 equ P1.1
-SECONDS3 equ P1.2
-SECONDS4 equ P1.3
-
-SECONDS5 equ P0.0
-SECONDS6 equ P0.1
-SECONDS7 equ P0.2
-SECONDS8 equ P0.3
 
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
@@ -96,14 +91,14 @@ $LIST
 
 ;                     1234567890123456    <- This helps determine the position of the counter
 Initial_Message:  db 'time:xx:xx:xx xx', 0
-Alarm_Message:    db 'alrm:xx:xx:xx xx', 0
-No_Alarm_Message: db 'alrm: off       ', 0
+Alarm_Message:    db 'oven:xx:xx:xx xx', 0
+No_Alarm_Message: db 'oven: off       ', 0
 AM_Message:  db 'AM', 0
 PM_Message:  db 'PM', 0
-Time_Or_Alarm1:   db '  time   alarm  ', 0
+Time_Or_Alarm1:   db '  soak  reflow  ', 0
 Time_Or_Alarm2:   db '  (up)  (down)  ', 0
-Time_Hour:        db 'hour: xx        ', 0
-Time_Minute:      db 'minute: xx      ', 0
+Time_Hour:        db 'time: xx        ', 0
+Time_Minute:      db 'temp: xx        ', 0
 Time_Second:      db 'second: xx      ', 0
 Time_PM:          db 'AM/PM:  xx      ', 0
 Okay_Message:     db 'xx:xx:xx xx  ok?', 0
@@ -208,142 +203,9 @@ Inc_Done:
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	
-	; Increment the seconds if less than 59
-Seconds:
-	mov a, second_counter
-	cjne a, #0x59, Seconds_Less_Than_59 
-	clr a
-	lcall Seconds_da	
-Minutes:
-	mov a, minute_counter
-	cjne a, #0x59, Minutes_Less_Than_59
-	clr a
-	lcall Minutes_da
-Check_for_AMPM:
-	mov a, hour_counter
-	cjne a, #0x11, Hours	
-	cpl pm_flag		
-Hours:
-	cjne a, #0x12, Hours_Less_Than_12
-	mov a, #0x01
-	lcall Hours_da
-	sjmp Timer2_ISR_done
-	
-Hours_Less_Than_12:
-	add a, #0x01
-	lcall Hours_da
-	sjmp Timer2_ISR_done	
-
-Minutes_Less_Than_59:
-	add a, #0x01
-	lcall Minutes_da
-	sjmp Timer2_ISR_done	
-	
-Seconds_Less_Than_59:
-	add a, #0x01
-	lcall Seconds_da
-	sjmp Timer2_ISR_done
-
-Seconds_da:
-	da a
-	mov second_counter, a
-	ret
-
-Minutes_da:
-	da a
-	mov minute_counter, a
-	ret
-	
-Hours_da:
-	da a
-	mov hour_counter, a
-	ret
 	
 exit_jumper:
 	ljmp exit
-		
-Timer2_ISR_done:
-	; if alarm is on alternate it
-	djnz number_of_beeps, arduino
-	clr alarm_trigger
-	
-arduino:	
-; write to arduino output pins
-	mov a, second_counter
-	
-	setb SECONDS1
-    setb SECONDS2
-    setb SECONDS3
-    setb SECONDS4
-    setb SECONDS5
-    setb SECONDS6
-    setb SECONDS7
-    setb SECONDS8
-	;output shift routine
-output_1:		
-	rlc a 
-	mov output, c
-	jnb output, output_2
-	clr SECONDS1
-output_2:
-    rlc a 
-	mov output, c
-	jnb output, output_3
-	clr SECONDS2
-output_3:
-    rlc a 
-	mov output, c
-	jnb output, output_4
-	clr SECONDS3
-output_4:
-    rlc a 
-	mov output, c
-	jnb output, output_5
-	clr SECONDS4
-output_5:
-    rlc a 
-	mov output, c
-	jnb output, output_6
-	clr SECONDS5
-output_6:
-    rlc a 
-	mov output, c
-	jnb output, output_7
-	clr SECONDS6
-output_7:
-    rlc a 
-	mov output, c
-	jnb output, output_8
-	clr SECONDS7
-output_8:
-    rlc a 
-	mov output, c
-	jnb output, alternate
-	clr SECONDS8	
-	
-alternate:
-	cpl timer_alternator
-	setb SOUND_OUT
-	; check if alarm should be triggered
-	jnb alarm_on, exit
-same_seconds:
-	mov a, alarm_hour
-	cjne a, hour_counter, exit
-	mov a, alarm_minute
-	cjne a, minute_counter, exit 
-	mov a, alarm_second
-	cjne a, second_counter, exit
-	
-	jb pm_flag, is_pm
-	jb pm_flag_alarm, exit
-	setb alarm_trigger
-	mov number_of_beeps, #0x08
-	sjmp exit
-	
-is_pm:	
-	jnb pm_flag_alarm, exit
-	setb alarm_trigger
-	mov number_of_beeps, #0x08
 exit:	
 	pop psw
 	pop acc
@@ -365,31 +227,22 @@ main:
     lcall Timer2_Init
     lcall LCD_4BIT
     ; For convenience a few handy macros are included in 'LCD_4bit.inc':
-	Set_Cursor(1, 1)
-    Send_Constant_String(#Initial_Message)
     setb seconds_flag
     clr pm_flag
     clr pm_flag_buffer
     setb pm_flag_alarm
     clr alarm_setup
     setb alarm_on
-    
-    setb SECONDS1
-    setb SECONDS2
-    setb SECONDS3
-    setb SECONDS4
-    setb SECONDS5
-    setb SECONDS6
-    setb SECONDS7
-    setb SECONDS8
 
 	mov second_counter, #0x56
 	mov minute_counter, #0x59
+
 	mov hour_counter, #0x05
-	
 	mov buffer_second, #0x00
 	mov buffer_minute, #0x00
 	mov buffer_hour, #0x12
+	
+	mov buffer_hour + 1, #0x12
 	
 	mov alarm_second, #0x00
 	mov alarm_minute, #0x00
@@ -400,21 +253,13 @@ loop:
 
 loop_a:
 	jnb seconds_flag, loop
+	
+	Set_Cursor(1, 1)
+    Send_Constant_String(#Clear)
+
 loop_b:
     clr seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 0
-	Set_Cursor(1, 1)
-    Send_Constant_String(#Initial_Message)
-	Set_Cursor(1, 12)     ; the place in the LCD where we want the BCD counter value
-	Display_BCD(second_counter) ; This macro is also in 'LCD_4bit.inc'
-	Set_Cursor(1, 9)
-	Display_BCD(minute_counter)
-	Set_Cursor(1, 6)
-	Display_BCD(hour_counter)
-	
-	jb pm_flag, its_pm ; If it's PM jump to set pm loop
 		
-	Set_Cursor(1, 15)
-    Send_Constant_String(#AM_message)
     ljmp alarm		
 	
 its_pm:
@@ -499,8 +344,11 @@ time_buffer:
     Send_Constant_String(#Continue) 
     
 hour_buffer:
-	Set_Cursor(1, 7)
+	Set_Cursor(1, 9)
 	Display_BCD(buffer_hour)
+	
+	Set_Cursor(1, 7)
+	Display_BCD(buffer_hour + 1)
 	
 	Wait_Milli_Seconds(#150)	; delay so user doesn't accidentally press something
 
@@ -525,7 +373,7 @@ hour_down_button:
 hour_up:
 	mov a, buffer_hour
 	cjne a, #0x12, hour_up_under_12
-	mov a, #0x01
+	mov a, #0x00
 	lcall buffer_hours_da
 	sjmp hour_buffer
 	
@@ -539,19 +387,19 @@ hour_down:
 	cjne a, #0x01, hour_down_over_1
 	mov a, #0x12
 	lcall buffer_hours_da
-	sjmp hour_buffer
+	ljmp hour_buffer
 	
 hour_down_over_1:
 	add a, #0x99
 	lcall buffer_hours_da
-	sjmp hour_buffer
+	ljmp hour_buffer
 ; minute message
 minute_message:
    	Set_Cursor(1, 1)
     Send_Constant_String(#Time_Minute) 
     
 minute_buffer:
-	Set_Cursor(1, 9)
+	Set_Cursor(1, 7)
 	Display_BCD(buffer_minute)
 	
 	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
