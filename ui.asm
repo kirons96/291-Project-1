@@ -52,8 +52,8 @@ alarm_second: ds 1 ;Holds the alarm digits
 alarm_minute: ds 1
 alarm_hour: ds 1
 buffer_second: ds 2 ;Buffer for user entry
-buffer_minute: ds 2
-buffer_hour: ds 2
+buffer_temp: ds 2
+buffer_time: ds 2
 soak_temp: ds 1
 soak_time: ds 1
 reflow_temp: ds 1
@@ -97,8 +97,8 @@ AM_Message:  db 'AM', 0
 PM_Message:  db 'PM', 0
 Time_Or_Alarm1:   db '  soak  reflow  ', 0
 Time_Or_Alarm2:   db '  (up)  (down)  ', 0
-Time_Hour:        db 'time: xx        ', 0
-Time_Minute:      db 'temp: xx        ', 0
+Time_Message:     db 'time: xx        ', 0
+Temp_Message:     db 'temp: xx        ', 0
 Time_Second:      db 'second: xx      ', 0
 Time_PM:          db 'AM/PM:  xx      ', 0
 Okay_Message:     db 'xx:xx:xx xx  ok?', 0
@@ -233,21 +233,22 @@ main:
     setb pm_flag_alarm
     clr alarm_setup
     setb alarm_on
-
+	
 	mov second_counter, #0x56
 	mov minute_counter, #0x59
-
 	mov hour_counter, #0x05
+
 	mov buffer_second, #0x00
-	mov buffer_minute, #0x00
-	mov buffer_hour, #0x12
-	
-	mov buffer_hour + 1, #0x12
-	
-	mov alarm_second, #0x00
+
+	mov buffer_temp + 1, #0x03
+	mov buffer_temp, #0x50
+
+	mov buffer_time + 1, #0x00
+	mov buffer_time, #0x14
+
 	mov alarm_minute, #0x00
 	mov alarm_hour, #0x01
-	
+
 	; After initialization the program stays in this 'forever' loop
 loop:
 
@@ -339,118 +340,159 @@ alarm_bit_set:
 	
 time_buffer:
 	Set_Cursor(1, 1)
-    Send_Constant_String(#Time_hour) 
+    Send_Constant_String(#Time_Message)
  	Set_Cursor(2, 1)
     Send_Constant_String(#Continue) 
     
-hour_buffer:
+time_loop:
 	Set_Cursor(1, 9)
-	Display_BCD(buffer_hour)
+	Display_BCD(buffer_time)
 	
 	Set_Cursor(1, 7)
-	Display_BCD(buffer_hour + 1)
+	Display_BCD(buffer_time + 1)
 	
 	Wait_Milli_Seconds(#150)	; delay so user doesn't accidentally press something
 
    ; jump to minute if user presses 'set' button
-   	jb USR_SET, choose_hour  ; if the 'set' button is not pressed skip
+   	jb USR_SET, time_select; if the 'set' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb USR_SET, choose_hour  ; if the 'set' button is not pressed skip
-	jnb USR_SET, minute_message		; wait for button release
-	
-choose_hour:
-hour_up_button:
-   	jb USR_UP, hour_down_button  
+	jb USR_SET, time_select; if the 'set' button is not pressed skip
+	jnb USR_SET, temp_buffer         ; wait for button release
+time_select:
+time_up_button:
+   	jb USR_UP, time_down_button  
 	Wait_Milli_Seconds(#100)	 
-	jb USR_UP, hour_down_button  
-	jnb USR_UP, hour_up
-hour_down_button:
-   	jb USR_DOWN, hour_buffer  
+	jb USR_UP, time_down_button  
+	jnb USR_UP, time_up
+time_down_button:
+   	jb USR_DOWN,time_loop 
 	Wait_Milli_Seconds(#100)	 
-	jb USR_DOWN, hour_buffer  
-	jnb USR_DOWN, hour_down
+	jb USR_DOWN,time_loop 
+	jnb USR_DOWN, time_down
 
-hour_up:
-	mov a, buffer_hour
-	cjne a, #0x12, hour_up_under_12
+time_up:
+	mov a, buffer_time
+	cjne a, #0x99, time_up_under_99
 	mov a, #0x00
-	lcall buffer_hours_da
-	sjmp hour_buffer
-	
-hour_up_under_12:
+	lcall buffer_time_da
+time_hundreds_up:
+	mov a, buffer_time + 1
+	cjne a, #0x08, time_hundreds_up_over
+	mov a, #0x00
+	mov buffer_time + 1, a
+	sjmp time_loop
+time_hundreds_up_over:
 	add a, #0x01
-	lcall buffer_hours_da
-	sjmp hour_buffer
+	da a
+	mov buffer_time + 1, a
+	ljmp time_loop
+time_up_under_99:
+	add a, #0x01
+	lcall buffer_time_da
+	ljmp time_loop
 
-hour_down:
-	mov a, buffer_hour
-	cjne a, #0x01, hour_down_over_1
-	mov a, #0x12
-	lcall buffer_hours_da
-	ljmp hour_buffer
-	
-hour_down_over_1:
+time_down:
+	mov a, buffer_time
+	cjne a, #0x00, time_down_over_0
+	mov a, #0x99
+	lcall buffer_time_da
+time_hundreds_down:
+	mov a, buffer_time + 1
+	cjne a, #0x00, time_hundreds_down_under
+	mov a, #0x08
+	da a
+	mov buffer_time + 1, a
+	ljmp time_loop
+time_hundreds_down_under:
 	add a, #0x99
-	lcall buffer_hours_da
-	ljmp hour_buffer
-; minute message
-minute_message:
+	da a
+	mov buffer_time +1, a	
+	ljmp time_loop
+time_down_over_0:
+	add a, #0x99
+	lcall buffer_time_da
+	ljmp time_loop
+
+;temperature 
+temp_buffer:
    	Set_Cursor(1, 1)
-    Send_Constant_String(#Time_Minute) 
+        Send_Constant_String(#Temp_Message) 
     
-minute_buffer:
-	Set_Cursor(1, 7)
-	Display_BCD(buffer_minute)
+temp_loop:
+	Set_Cursor(1, 9)
+	Display_BCD(buffer_temp)
 	
-	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
+	Set_Cursor(1, 7)
+	Display_BCD(buffer_temp + 1)
+	
+	Wait_Milli_Seconds(#150)	; delay so user doesn't accidentally press something
 
    ; jump to minute if user presses 'set' button
-   	jb USR_SET, choose_minute  ; if the 'set' button is not pressed skip
+   	jb USR_SET, temp_select; if the 'set' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb USR_SET, choose_minute  ; if the 'set' button is not pressed skip
-	jnb USR_SET, $		; wait for button release
-	ljmp second_message
+	jb USR_SET, temp_select; if the 'set' button is not pressed skip
+	jnb USR_SET, second_message; wait for button release
 	
-choose_minute:
-minute_up_button:
-   	jb USR_UP, minute_down_button  
+temp_select:
+temp_up_button:
+   	jb USR_UP, temp_down_button  
 	Wait_Milli_Seconds(#100)	 
-	jb USR_UP, minute_down_button  
-	jnb USR_UP, minute_up
-minute_down_button:
-   	jb USR_DOWN, minute_buffer  
+	jb USR_UP, temp_down_button  
+	jnb USR_UP, temp_up
+temp_down_button:
+   	jb USR_DOWN,temp_loop 
 	Wait_Milli_Seconds(#100)	 
-	jb USR_DOWN, minute_buffer  
-	jnb USR_DOWN, minute_down
+	jb USR_DOWN,temp_loop 
+	jnb USR_DOWN, temp_down
 
-minute_up:
-	mov a, buffer_minute
-	cjne a, #0x59, minute_up_under_59
+temp_up:
+	mov a, buffer_temp
+	cjne a, #0x99, temp_up_under_99
 	mov a, #0x00
-	lcall buffer_minutes_da
-	sjmp minute_buffer
-	
-minute_up_under_59:
+	lcall buffer_temp_da
+temp_hundreds_up:
+	mov a, buffer_temp + 1
+	cjne a, #0x08, temp_hundreds_up_over
+	mov a, #0x00
+	mov buffer_temp + 1, a
+	sjmp temp_loop
+temp_hundreds_up_over:
 	add a, #0x01
-	lcall buffer_minutes_da
-	sjmp minute_buffer
+	da a
+	mov buffer_temp + 1, a
+	ljmp temp_loop
+temp_up_under_99:
+	add a, #0x01
+	lcall buffer_temp_da
+	ljmp temp_loop
 
-minute_down:
-	mov a, buffer_minute
-	cjne a, #0x00, minute_down_over_0
-	mov a, #0x59
-	lcall buffer_minutes_da
-	sjmp minute_buffer
-	
-minute_down_over_0:
+temp_down:
+	mov a, buffer_temp
+	cjne a, #0x00, temp_down_over_0
+	mov a, #0x99
+	lcall buffer_temp_da
+temp_hundreds_down:
+	mov a, buffer_temp + 1
+	cjne a, #0x00, temp_hundreds_down_under
+	mov a, #0x08
+	da a
+	mov buffer_temp + 1, a
+	ljmp temp_loop
+temp_hundreds_down_under:
 	add a, #0x99
-	lcall buffer_minutes_da
-	sjmp minute_buffer	
-	
-;seconds
+	da a
+	mov buffer_temp +1, a	
+	ljmp temp_loop
+temp_down_over_0:
+	add a, #0x99
+	lcall buffer_temp_da
+	ljmp temp_loop
+
+
+;temp
 second_message:
    	Set_Cursor(1, 1)
-    Send_Constant_String(#Time_Second) 
+    	Send_Constant_String(#Time_Second) 
     
 second_buffer:
 	Set_Cursor(1, 9)
@@ -505,14 +547,14 @@ buffer_seconds_da:
 	mov buffer_second, a
 	ret
 
-buffer_minutes_da:
+buffer_time_da:
 	da a
-	mov buffer_minute, a
+	mov buffer_time, a
 	ret
 	
-buffer_hours_da:
+buffer_temp_da:
 	da a
-	mov buffer_hour, a
+	mov buffer_temp, a
 	ret
 
 ampm_message:
@@ -563,9 +605,9 @@ ok_message:
 	Set_Cursor(1, 7)   
 	Display_BCD(buffer_second) 
 	Set_Cursor(1, 4)
-	Display_BCD(buffer_minute)
+	Display_BCD(buffer_temp)
 	Set_Cursor(1, 1)
-	Display_BCD(buffer_hour)
+	Display_BCD(buffer_temp)
 
 	Set_Cursor(1, 10)
 	jb pm_flag_buffer, ok_ampm
@@ -614,9 +656,9 @@ writeback:
 	;write to time regs
 	mov a, buffer_second
 	mov second_counter, a
-	mov a, buffer_minute
+	mov a, buffer_temp
 	mov minute_counter, a
-	mov a, buffer_hour
+	mov a, buffer_temp
 	mov hour_counter, a
 	jb pm_flag_buffer, write_pm
 	clr pm_flag
@@ -637,9 +679,9 @@ chose_alarm:
 	;write to alarm regs
 	mov a, buffer_second
 	mov alarm_second, a
-	mov a, buffer_minute
+	mov a, buffer_temp
 	mov alarm_minute, a
-	mov a, buffer_hour
+	mov a, buffer_temp
 	mov alarm_hour, a
 	jb pm_flag_buffer, write_alarm_pm
 	clr pm_flag_alarm 
@@ -655,8 +697,8 @@ done_writeback_2:
  
 reset_buffer:
 	mov buffer_second, #0x00
-	mov buffer_minute, #0x00
-	mov buffer_hour, #0x12
+	mov buffer_temp, #0x00
+	mov buffer_temp, #0x12
 	clr pm_flag_buffer
 	clr alarm_setup
 	ret    
