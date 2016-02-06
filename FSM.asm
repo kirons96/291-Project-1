@@ -321,7 +321,7 @@ STATE0:
 	jb START_BUTTON, STATE0_DONE
 	jnb START_BUTTON, $ ; Wait for key release
 	mov CURRENT_STATE, #1
-	mov SHORT_BEEP, #0x01 ;short beep enabled
+	mov SHORT_BEEP, #0x01
 STATE0_DONE:
 	ljmp forever
 STATE1:

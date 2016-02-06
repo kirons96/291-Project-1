@@ -315,69 +315,68 @@
 0207            316   STATE0:
 0207 B4001E     317            cjne a, #0, STATE1
 020A 853735     318            mov PWM_FLAG, PWM_OFF
-020D            319   
-020D 753A01     320            mov SHORT_BEEP, #0x01 ;short beep enabled
-0210 208312     321            jb START_BUTTON, STATE0_DONE
-0213 C002       322            push AR2
-0215 7A32       322            mov R2, #50
-0217 120039     322            lcall ?Wait_Milli_Seconds
-021A D002       322            pop AR2; debounce time
-021C 208306     323            jb START_BUTTON, STATE0_DONE
-021F 3083FD     324            jnb START_BUTTON, $ ; Wait for key release
-0222 753201     325            mov CURRENT_STATE, #1
-0225            326   STATE0_DONE:
-0225 0201CB     327            ljmp forever
-0228            328   STATE1:
-0228 B40113     329            cjne a, #1, STATE2
-022B            330                    
-022B 853935     331            mov PWM_FLAG, PWM_HIGH
-022E 753300     332            mov SEC, #0
-0231 7496       333            mov a, #150
-0233 C3         334            clr c
-0234 9534       335            subb a, TEMP
-0236 5003       336            jnc STATE1_DONE
-0238 753202     337            mov CURRENT_STATE, #2
-023B            338   STATE1_DONE:
-023B 0201CB     339            ljmp forever
-023E            340   STATE2:
-023E B40210     341            cjne a, #2, STATE3
-0241 853835     342            mov PWM_FLAG, PWM_LOW
-0244 743C       343            mov a, #60
-0246 C3         344            clr c
-0247 9533       345            subb a, SEC
-0249 5003       346            jnc STATE2_DONE
-024B 753203     347            mov CURRENT_STATE, #3
-024E            348   STATE2_DONE:
-024E 0201CB     349            ljmp forever
-0251            350   STATE3:
-0251 B40313     351            cjne a, #3, STATE4
-0254 853935     352            mov PWM_FLAG, PWM_HIGH
-0257 753300     353            mov SEC, #0
-025A 74DC       354            mov a, #220
-025C C3         355            clr c
-025D 9534       356            subb a, TEMP
-025F 5003       357            jnc STATE3_DONE
-0261 753204     358            mov CURRENT_STATE, #4
-0264            359   STATE3_DONE:
-0264 0201CB     360            ljmp forever
-0267            361   STATE4:
-0267 B40410     362            cjne a, #4, STATE5
-026A 853835     363            mov PWM_FLAG, PWM_LOW
-026D 742D       364            mov a, #45
-026F C3         365            clr c
-0270 9533       366            subb a, SEC
-0272 5003       367            jnc STATE4_DONE
-0274 753205     368            mov CURRENT_STATE, #5
-0277            369   STATE4_DONE:
-0277 0201CB     370            ljmp forever
-027A            371   STATE5:
-027A B40510     372            cjne a, #5, STATE5_DONE
-027D 853735     373            mov PWM_FLAG, PWM_OFF
-0280 753300     374            mov SEC, #0
-0283 743C       375            mov a, #60
-0285 C3         376            clr c
-0286 9534       377            subb a, TEMP
-0288 5003       378            jnc STATE5_DONE
-028A 753200     379            mov CURRENT_STATE, #0
-028D            380   STATE5_DONE:
-028D 0201CB     381            ljmp forever
+020D 208315     319            jb START_BUTTON, STATE0_DONE
+0210 C002       320            push AR2
+0212 7A32       320            mov R2, #50
+0214 120039     320            lcall ?Wait_Milli_Seconds
+0217 D002       320            pop AR2; debounce time
+0219 208309     321            jb START_BUTTON, STATE0_DONE
+021C 3083FD     322            jnb START_BUTTON, $ ; Wait for key release
+021F 753201     323            mov CURRENT_STATE, #1
+0222 753A01     324            mov SHORT_BEEP, #0x01
+0225            325   STATE0_DONE:
+0225 0201CB     326            ljmp forever
+0228            327   STATE1:
+0228 B40113     328            cjne a, #1, STATE2
+022B            329                    
+022B 853935     330            mov PWM_FLAG, PWM_HIGH
+022E 753300     331            mov SEC, #0
+0231 7496       332            mov a, #150
+0233 C3         333            clr c
+0234 9534       334            subb a, TEMP
+0236 5003       335            jnc STATE1_DONE
+0238 753202     336            mov CURRENT_STATE, #2
+023B            337   STATE1_DONE:
+023B 0201CB     338            ljmp forever
+023E            339   STATE2:
+023E B40210     340            cjne a, #2, STATE3
+0241 853835     341            mov PWM_FLAG, PWM_LOW
+0244 743C       342            mov a, #60
+0246 C3         343            clr c
+0247 9533       344            subb a, SEC
+0249 5003       345            jnc STATE2_DONE
+024B 753203     346            mov CURRENT_STATE, #3
+024E            347   STATE2_DONE:
+024E 0201CB     348            ljmp forever
+0251            349   STATE3:
+0251 B40313     350            cjne a, #3, STATE4
+0254 853935     351            mov PWM_FLAG, PWM_HIGH
+0257 753300     352            mov SEC, #0
+025A 74DC       353            mov a, #220
+025C C3         354            clr c
+025D 9534       355            subb a, TEMP
+025F 5003       356            jnc STATE3_DONE
+0261 753204     357            mov CURRENT_STATE, #4
+0264            358   STATE3_DONE:
+0264 0201CB     359            ljmp forever
+0267            360   STATE4:
+0267 B40410     361            cjne a, #4, STATE5
+026A 853835     362            mov PWM_FLAG, PWM_LOW
+026D 742D       363            mov a, #45
+026F C3         364            clr c
+0270 9533       365            subb a, SEC
+0272 5003       366            jnc STATE4_DONE
+0274 753205     367            mov CURRENT_STATE, #5
+0277            368   STATE4_DONE:
+0277 0201CB     369            ljmp forever
+027A            370   STATE5:
+027A B40510     371            cjne a, #5, STATE5_DONE
+027D 853735     372            mov PWM_FLAG, PWM_OFF
+0280 753300     373            mov SEC, #0
+0283 743C       374            mov a, #60
+0285 C3         375            clr c
+0286 9534       376            subb a, TEMP
+0288 5003       377            jnc STATE5_DONE
+028A 753200     378            mov CURRENT_STATE, #0
+028D            379   STATE5_DONE:
+028D 0201CB     380            ljmp forever
