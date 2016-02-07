@@ -3,14 +3,14 @@ $MODLP52
 $LIST
 
 CLK           EQU 22118400 ; Microcontroller system crystal frequency in Hz
-TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_RATE   EQU 1     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON     EQU P4.5 ;reset button
 SOUND_OUT       EQU P3.7
-PWM_PIN			EQU P0.0 ;change later
+PWM_PIN			EQU P0.1 ;change later
 START_BUTTON 	EQU P0.3 ;start button
 
 ; Reset vector
@@ -113,7 +113,7 @@ Timer0_ISR:
 	push acc
 	push psw
 	
-;************BEEPER************
+	;************BEEPER************
 	
 CHECK_SHORT_BEEP:
 	mov a, SHORT_BEEP
@@ -129,43 +129,50 @@ CHECK_LONG_BEEP:
 	;LONG BEEP ON
 
 	;**************PWM**************
-	
-	;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
 
 CHECK_OFF:
 	mov a, PWM_FLAG
 	cjne a, PWM_OFF, CHECK_LOW
-	;PWM IS OFF
-	clr PWM_PIN
-	ljmp FINISH_PWM_FLAG_CHECK
-CHECK_LOW:
-	cjne a, PWM_LOW, CHECK_HIGH
-	;PWM IS LOW
-	mov a, PWM_COUNTER
-	cjne a, PWM_LOW, FINISH_PWM_FLAG_CHECK
-	;PWM_COUNTER = PWM_LOW
-	clr PWM_PIN
-	ljmp FINISH_PWM_FLAG_CHECK
-CHECK_HIGH:
-	;PWM IS HIGH
-	mov a, PWM_COUNTER
-	cjne a, PWM_HIGH, FINISH_PWM_FLAG_CHECK
-	;PWM_COUNTER = PWM_HIGH
-	;clr PWM_PIN	
+	
+	setb PWM_PIN
+	
+	sjmp CHECK_COMPLETE
 
-FINISH_PWM_FLAG_CHECK: 
+CHECK_LOW:
+	mov a, PWM_FLAG
+	cjne a, PWM_LOW, CHECK_HIGH
+	
 	mov a, PWM_COUNTER
-	add a, #0x01
-	da a
+	cjne a, PWM_LOW, CHECK_COMPLETE
+
+	setb PWM_PIN
+	
+	sjmp CHECK_COMPLETE
+
+CHECK_HIGH:
+	clr PWM_PIN
+
+CHECK_COMPLETE:
+	;incrementing
+	mov a, PWM_COUNTER
+	add a, #1
 	mov PWM_COUNTER, a
 
-	cjne a, #100, FINISH_PWM
-	;PIN_COUNTER has reached 100
-	setb PWM_PIN	
+	;checking for end of PWM
+	mov a, PWM_COUNTER
+	cjne a, PWM_HIGH, FINISH_T0 ;PWM_HIGH is the max counter
 
-	mov PWM_COUNTER, #0 ;reset the counter 	
+RESET_PWM_COUNTER:
+	mov a, #0
+	mov PWM_COUNTER, a
+	
+	;only change when PWM is low
+	mov a, PWM_FLAG
+	cjne a, PWM_LOW, FINISH_T0
+	clr PWM_PIN			
+	
+FINISH_T0:
 
-FINISH_PWM:
 	pop psw
 	pop acc
 	
@@ -235,7 +242,7 @@ Inc_Done:
 
 CHECK_LONG_BEEP_2:
 	mov a, LONG_BEEP
-	cjne a, #0x01, CHECK_OFF
+	cjne a, #0x01, FINISH_BEEPER
 	;LONG BEEP ON
 FINISH_BEEPER:
 	; Reset the milli-seconds counter, it is a 16-bit variable
@@ -270,14 +277,14 @@ main:
 	lcall LCD_4BIT
 	; For convenience a few handy macros are included in 'LCD_4bit.inc':
 	setb half_seconds_flag
-	mov SEC, #0x00
+	mov SEC, #0
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
-	mov PWM_FLAG, PWM_OFF
+	mov PWM_FLAG, PWM_LOW
 	mov PWM_OFF, #0
-	mov PWM_LOW, #20
-	mov PWM_HIGH, #100
-	mov SHORT_BEEP, #0x00
+	mov PWM_LOW, #1 ;because weird bug (ask kiron)
+	mov PWM_HIGH, #10
+	mov SHORT_BEEP, #0
 	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
 	mov LONG_BEEP_COUNTER, #0
@@ -315,19 +322,22 @@ loop_b:
 	mov a, CURRENT_STATE
 STATE0:
 	cjne a, #0, STATE1
-	mov PWM_FLAG, PWM_OFF
+
+	;mov PWM_FLAG, PWM_OFF
+
 	jb START_BUTTON, STATE0_DONE
 	Wait_Milli_Seconds(#50); debounce time
 	jb START_BUTTON, STATE0_DONE
 	jnb START_BUTTON, $ ; Wait for key release
-	mov CURRENT_STATE, #1
+	mov CURRENT_STATE, #0x01
 	mov SHORT_BEEP, #0x01
 STATE0_DONE:
 	ljmp forever
 STATE1:
 	cjne a, #1, STATE2
-		
-	mov PWM_FLAG, PWM_HIGH
+
+	;mov PWM_FLAG, PWM_HIGH
+
 	mov SEC, #0
 	mov a, #150
 	clr c
@@ -338,7 +348,9 @@ STATE1_DONE:
 	ljmp forever
 STATE2:
 	cjne a, #2, STATE3
-	mov PWM_FLAG, PWM_LOW
+
+	;mov PWM_FLAG, PWM_LOW
+
 	mov a, #60
 	clr c
 	subb a, SEC
@@ -348,7 +360,9 @@ STATE2_DONE:
 	ljmp forever
 STATE3:
 	cjne a, #3, STATE4
-	mov PWM_FLAG, PWM_HIGH
+
+	;mov PWM_FLAG, PWM_HIGH
+
 	mov SEC, #0
 	mov a, #220
 	clr c
@@ -359,7 +373,9 @@ STATE3_DONE:
 	ljmp forever
 STATE4:
 	cjne a, #4, STATE5
-	mov PWM_FLAG, PWM_LOW
+
+	;mov PWM_FLAG, PWM_LOW
+
 	mov a, #45
 	clr c
 	subb a, SEC
@@ -369,7 +385,9 @@ STATE4_DONE:
 	ljmp forever
 STATE5:
 	cjne a, #5, STATE5_DONE
-	mov PWM_FLAG, PWM_OFF
+
+	;mov PWM_FLAG, PWM_OFF
+
 	mov SEC, #0
 	mov a, #60
 	clr c
