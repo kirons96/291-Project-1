@@ -10,8 +10,13 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON     EQU P4.5 ;reset button
 SOUND_OUT       EQU P3.7
+<<<<<<< HEAD
 PWM_PIN			EQU P0.0 ;change later
 START_BUTTON 	EQU P0.2 ;start button
+=======
+PWM_PIN			EQU P0.1 ;change later
+START_BUTTON 	EQU P0.3 ;start button
+>>>>>>> origin/master
 
 ; Reset vector
 org 0000H
@@ -120,8 +125,15 @@ Timer0_ISR:
 	mov TL0, #low(TIMER0_RELOAD+CORRECTION)
 	setb TR0
 	
+<<<<<<< HEAD
 	;push acc
 	;push psw
+=======
+	push acc
+	push psw
+	
+	;************BEEPER************
+>>>>>>> origin/master
 	
 	;************BEEPER************
 	; check to see if START_BUTTON is pressed
@@ -136,7 +148,11 @@ long_beep_transition:
 	cpl P3.7
 	
 	;**************PWM**************
+<<<<<<< HEAD
 	;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
+=======
+
+>>>>>>> origin/master
 CHECK_OFF:
 	push acc
 	push psw
@@ -172,6 +188,13 @@ CHECK_COMPLETE:
 	mov a, PWM_COUNTER
 	cjne a, PWM_HIGH, FINISH_T0 ;PWM_HIGH is the max counter
 
+<<<<<<< HEAD
+=======
+	;checking for end of PWM
+	mov a, PWM_COUNTER
+	cjne a, PWM_HIGH, FINISH_T0 ;PWM_HIGH is the max counter
+
+>>>>>>> origin/master
 RESET_PWM_COUNTER:
 	mov a, #0
 	mov PWM_COUNTER, a
@@ -182,6 +205,10 @@ RESET_PWM_COUNTER:
 	clr PWM_PIN			
 	
 FINISH_T0:
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/master
 	pop psw
 	pop acc
 	reti
@@ -233,6 +260,35 @@ Inc_Done:
 	setb half_seconds_flag ; Let the main program know half second had passed
 	;cpl TR1 ; This line makes a beep-silence-beep-silence sound
 
+<<<<<<< HEAD
+=======
+	;************BEEPER************
+
+	mov a, SHORT_BEEP
+	cjne a, #0x01, CHECK_LONG_BEEP_2
+
+	;SHORT BEEP ON, increment counter
+
+	mov a, SHORT_BEEP_COUNTER
+	add a, #0x01
+	mov SHORT_BEEP_COUNTER, a
+
+	cjne a, #0x02, FINISH_BEEPER 
+
+	;STOP SHORT BEEP
+	mov a, #0x00
+	mov SHORT_BEEP, a
+	mov SHORT_BEEP_COUNTER, a
+	clr SOUND_OUT
+
+CHECK_LONG_BEEP_2:
+	mov a, LONG_BEEP
+	cjne a, #0x01, FINISH_BEEPER
+	;LONG BEEP ON
+FINISH_BEEPER:
+	; Reset the milli-seconds counter, it is a 16-bit variable
+
+>>>>>>> origin/master
 	;************COUNTER************
 	clr a
 	mov Count1ms+0, a
@@ -328,18 +384,29 @@ main:
 	Send_Constant_String(#Display_State_Message)
 	
 	setb half_seconds_flag
+<<<<<<< HEAD
 	mov SEC_COUNTER, #0
+=======
+	mov SEC, #0
+>>>>>>> origin/master
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
 	mov PWM_FLAG, PWM_OFF
 	mov PWM_OFF, #0
 	mov PWM_LOW, #1 ;because weird bug (ask kiron)
 	mov PWM_HIGH, #10
+<<<<<<< HEAD
 	;mov SHORT_BEEP, #0
 	mov SHORT_BEEP_COUNTER, #0x00
 	;mov LONG_BEEP, #0
 	;mov LONG_BEEP_COUNTER, #0
 	mov TEMP, #0
+=======
+	mov SHORT_BEEP, #0
+	mov SHORT_BEEP_COUNTER, #0
+	mov LONG_BEEP, #0
+	mov LONG_BEEP_COUNTER, #0
+>>>>>>> origin/master
 
 	; After initialization the program stays in this 'forever' loop
 forever:
@@ -371,6 +438,7 @@ loop_b:
 	
 	mov a, CURRENT_STATE
 STATE0:
+<<<<<<< HEAD
 	cjne a, #0x00, STATE1 ; change this back to STATE1
 	mov PWM_FLAG, PWM_OFF
 	Set_Cursor(1, 7)			
@@ -381,16 +449,36 @@ STATE0:
 	cpl start_reload_flag ; set start_reload_flag.....this beep indicates START = YES & transition to STATE 1
 	mov CURRENT_STATE, #0x01 ; change this back to #0x01
 	;cpl start_sec_counter_state2_flag ; set flag to start incrementing SEC_COUNTER to 60s (WON'T NEED THIS LINE)
+=======
+	cjne a, #0, STATE1
+
+	mov PWM_FLAG, PWM_OFF
+
+	jb START_BUTTON, STATE0_DONE
+	Wait_Milli_Seconds(#50); debounce time
+	jb START_BUTTON, STATE0_DONE
+	jnb START_BUTTON, $ ; Wait for key release
+	mov CURRENT_STATE, #0x01
+	mov SHORT_BEEP, #0x01
+>>>>>>> origin/master
 STATE0_DONE:
 	ljmp forever
 	
 STATE1:
+<<<<<<< HEAD
 	cpl P0.1
 	cjne a, #0x01, STATE2
 	Set_Cursor(1, 7)			
 	Display_BCD(#1)
 	mov PWM_FLAG, PWM_HIGH
 	;mov SEC_COUNTER, #0x00
+=======
+	cjne a, #1, STATE2
+
+	mov PWM_FLAG, PWM_HIGH
+
+	mov SEC, #0
+>>>>>>> origin/master
 	mov a, #150
 	;mov TEMP, #160
 	clr c
@@ -403,6 +491,7 @@ STATE1_DONE:
 	ljmp forever
 	
 STATE2:
+<<<<<<< HEAD
 	cjne a, #0x02, STATE3 ; change this back to STATE3
 	Set_Cursor(1, 7)			
 	Display_BCD(#2)
@@ -414,16 +503,35 @@ STATE2:
 	mov CURRENT_STATE, #0x03 ; change this back to #0x03
 	cpl state_transition_beep_flag ; short beep flag to indicate change of state
 	;cpl start_sec_counter_state4_flag ; set flag to start incrementing SEC_COUNTER to 45s (WON'T NEED THIS LINE)
+=======
+	cjne a, #2, STATE3
+
+	mov PWM_FLAG, PWM_LOW
+
+	mov a, #60
+	clr c
+	subb a, SEC
+	jnc STATE2_DONE
+	mov CURRENT_STATE, #3
+>>>>>>> origin/master
 STATE2_DONE:
 	ljmp forever
 	
 STATE3:
+<<<<<<< HEAD
 	cpl P0.1 ; this is to test change of state
 	cjne a, #0x03, STATE4
 	Set_Cursor(1, 7)			
 	Display_BCD(#3)
 	mov PWM_FLAG, PWM_HIGH
 	;mov SEC_COUNTER, #0x00
+=======
+	cjne a, #3, STATE4
+
+	mov PWM_FLAG, PWM_HIGH
+
+	mov SEC, #0
+>>>>>>> origin/master
 	mov a, #220
 	;mov TEMP, #225
 	clr c
@@ -436,6 +544,7 @@ STATE3_DONE:
 	ljmp forever
 	
 STATE4:
+<<<<<<< HEAD
 	cjne a, #0x04, STATE5
 	Set_Cursor(1, 7)			
 	Display_BCD(#4)
@@ -446,10 +555,22 @@ STATE4:
 	;mov PWM_FLAG, PWM_LOW
 	mov CURRENT_STATE, #0x05
 	cpl state_transition_beep_flag ;  set flag to short beep to indicate change of state
+=======
+	cjne a, #4, STATE5
+
+	mov PWM_FLAG, PWM_LOW
+
+	mov a, #45
+	clr c
+	subb a, SEC
+	jnc STATE4_DONE
+	mov CURRENT_STATE, #5
+>>>>>>> origin/master
 STATE4_DONE:
 	ljmp forever
 	
 STATE5:
+<<<<<<< HEAD
 	cpl P0.7
 	cjne a, #0x05, STATE5_DONE
 	Set_Cursor(1, 7)			
@@ -460,6 +581,14 @@ STATE5:
 	mov PWM_FLAG, PWM_OFF
 	mov a, TEMP
 	mov R1, #0x60
+=======
+	cjne a, #5, STATE5_DONE
+
+	mov PWM_FLAG, PWM_OFF
+
+	mov SEC, #0
+	mov a, #60
+>>>>>>> origin/master
 	clr c
 	subb a, R1
 	jnc STATE5_DONE
