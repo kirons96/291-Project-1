@@ -3,7 +3,7 @@ $MODLP52
 $LIST
 
 CLK           EQU 22118400 ; Microcontroller system crystal frequency in Hz
-TIMER0_RATE   EQU 1     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
@@ -280,7 +280,7 @@ main:
 	mov SEC, #0
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
-	mov PWM_FLAG, PWM_LOW
+	mov PWM_FLAG, PWM_OFF
 	mov PWM_OFF, #0
 	mov PWM_LOW, #1 ;because weird bug (ask kiron)
 	mov PWM_HIGH, #10
@@ -323,7 +323,7 @@ loop_b:
 STATE0:
 	cjne a, #0, STATE1
 
-	;mov PWM_FLAG, PWM_OFF
+	mov PWM_FLAG, PWM_OFF
 
 	jb START_BUTTON, STATE0_DONE
 	Wait_Milli_Seconds(#50); debounce time
@@ -336,7 +336,7 @@ STATE0_DONE:
 STATE1:
 	cjne a, #1, STATE2
 
-	;mov PWM_FLAG, PWM_HIGH
+	mov PWM_FLAG, PWM_HIGH
 
 	mov SEC, #0
 	mov a, #150
@@ -349,7 +349,7 @@ STATE1_DONE:
 STATE2:
 	cjne a, #2, STATE3
 
-	;mov PWM_FLAG, PWM_LOW
+	mov PWM_FLAG, PWM_LOW
 
 	mov a, #60
 	clr c
@@ -361,7 +361,7 @@ STATE2_DONE:
 STATE3:
 	cjne a, #3, STATE4
 
-	;mov PWM_FLAG, PWM_HIGH
+	mov PWM_FLAG, PWM_HIGH
 
 	mov SEC, #0
 	mov a, #220
@@ -374,7 +374,7 @@ STATE3_DONE:
 STATE4:
 	cjne a, #4, STATE5
 
-	;mov PWM_FLAG, PWM_LOW
+	mov PWM_FLAG, PWM_LOW
 
 	mov a, #45
 	clr c
@@ -386,7 +386,7 @@ STATE4_DONE:
 STATE5:
 	cjne a, #5, STATE5_DONE
 
-	;mov PWM_FLAG, PWM_OFF
+	mov PWM_FLAG, PWM_OFF
 
 	mov SEC, #0
 	mov a, #60

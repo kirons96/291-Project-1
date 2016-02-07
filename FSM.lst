@@ -1,7 +1,7 @@
                   2   $LIST
 0000              4   
 0000              5   CLK           EQU 22118400 ; Microcontroller system crystal frequency in Hz
-0000              6   TIMER0_RATE   EQU 1     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+0000              6   TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 0000              7   TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 0000              8   TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 0000              9   TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
@@ -84,8 +84,8 @@
 00DE 54F0        88            anl a, #0xf0 ; Clear the bits for timer 0
 00E0 4401        89            orl a, #0x01 ; Configure timer 0 as 16-timer
 00E2 F589        90            mov TMOD, a
-00E4 758C80      91            mov TH0, #high(TIMER0_RELOAD)
-00E7 758A00      92            mov TL0, #low(TIMER0_RELOAD)
+00E4 758CEA      91            mov TH0, #high(TIMER0_RELOAD)
+00E7 758AE8      92            mov TL0, #low(TIMER0_RELOAD)
 00EA             93            ; Enable the timer and interrupts
 00EA D2A9        94       setb ET0  ; Enable timer 0 interrupt
 00EC D28C        95       setb TR0  ; Start timer 0
@@ -102,8 +102,8 @@
 00F1            106            CORRECTION EQU (4+4+2+2+4+4) ; lcall+ljmp+clr+mov+mov+setb
 00F1            107            ; In mode 1 we need to reload the timer.
 00F1 C28C       108            clr TR0
-00F3 758C81     109            mov TH0, #high(TIMER0_RELOAD+CORRECTION)
-00F6 758A14     110            mov TL0, #low(TIMER0_RELOAD+CORRECTION)
+00F3 758CEA     109            mov TH0, #high(TIMER0_RELOAD+CORRECTION)
+00F6 758AFC     110            mov TL0, #low(TIMER0_RELOAD+CORRECTION)
 00F9 D28C       111            setb TR0
 00FB            112            
 00FB C0E0       113            push acc
@@ -276,7 +276,7 @@
 01AE 753300     280            mov SEC, #0
 01B1 753200     281            mov CURRENT_STATE, #0
 01B4 753600     282            mov PWM_COUNTER, #0
-01B7 853835     283            mov PWM_FLAG, PWM_LOW
+01B7 853735     283            mov PWM_FLAG, PWM_OFF
 01BA 753700     284            mov PWM_OFF, #0
 01BD 753801     285            mov PWM_LOW, #1 ;because weird bug (ask kiron)
 01C0 75390A     286            mov PWM_HIGH, #10
@@ -320,81 +320,81 @@
 0209            321   
 0209 E532       322            mov a, CURRENT_STATE
 020B            323   STATE0:
-020B B4001B     324            cjne a, #0, STATE1
+020B B4001E     324            cjne a, #0, STATE1
 020E            325   
-020E            326            ;mov PWM_FLAG, PWM_OFF
-020E            327   
-020E 208315     328            jb START_BUTTON, STATE0_DONE
-0211 C002       329            push AR2
-0213 7A32       329            mov R2, #50
-0215 120039     329            lcall ?Wait_Milli_Seconds
-0218 D002       329            pop AR2; debounce time
-021A 208309     330            jb START_BUTTON, STATE0_DONE
-021D 3083FD     331            jnb START_BUTTON, $ ; Wait for key release
-0220 753201     332            mov CURRENT_STATE, #0x01
-0223 753A01     333            mov SHORT_BEEP, #0x01
-0226            334   STATE0_DONE:
-0226 0201CF     335            ljmp forever
-0229            336   STATE1:
-0229 B40110     337            cjne a, #1, STATE2
-022C            338   
-022C            339            ;mov PWM_FLAG, PWM_HIGH
-022C            340   
-022C 753300     341            mov SEC, #0
-022F 7496       342            mov a, #150
-0231 C3         343            clr c
-0232 9534       344            subb a, TEMP
-0234 5003       345            jnc STATE1_DONE
-0236 753202     346            mov CURRENT_STATE, #2
-0239            347   STATE1_DONE:
-0239 0201CF     348            ljmp forever
-023C            349   STATE2:
-023C B4020D     350            cjne a, #2, STATE3
-023F            351   
-023F            352            ;mov PWM_FLAG, PWM_LOW
-023F            353   
-023F 743C       354            mov a, #60
-0241 C3         355            clr c
-0242 9533       356            subb a, SEC
-0244 5003       357            jnc STATE2_DONE
-0246 753203     358            mov CURRENT_STATE, #3
-0249            359   STATE2_DONE:
-0249 0201CF     360            ljmp forever
-024C            361   STATE3:
-024C B40310     362            cjne a, #3, STATE4
-024F            363   
-024F            364            ;mov PWM_FLAG, PWM_HIGH
-024F            365   
-024F 753300     366            mov SEC, #0
-0252 74DC       367            mov a, #220
-0254 C3         368            clr c
-0255 9534       369            subb a, TEMP
-0257 5003       370            jnc STATE3_DONE
-0259 753204     371            mov CURRENT_STATE, #4
-025C            372   STATE3_DONE:
-025C 0201CF     373            ljmp forever
-025F            374   STATE4:
-025F B4040D     375            cjne a, #4, STATE5
-0262            376   
-0262            377            ;mov PWM_FLAG, PWM_LOW
-0262            378   
-0262 742D       379            mov a, #45
-0264 C3         380            clr c
-0265 9533       381            subb a, SEC
-0267 5003       382            jnc STATE4_DONE
-0269 753205     383            mov CURRENT_STATE, #5
-026C            384   STATE4_DONE:
-026C 0201CF     385            ljmp forever
-026F            386   STATE5:
-026F B4050D     387            cjne a, #5, STATE5_DONE
-0272            388   
-0272            389            ;mov PWM_FLAG, PWM_OFF
-0272            390   
-0272 753300     391            mov SEC, #0
-0275 743C       392            mov a, #60
-0277 C3         393            clr c
-0278 9534       394            subb a, TEMP
-027A 5003       395            jnc STATE5_DONE
-027C 753200     396            mov CURRENT_STATE, #0
-027F            397   STATE5_DONE:
-027F 0201CF     398            ljmp forever
+020E 853735     326            mov PWM_FLAG, PWM_OFF
+0211            327   
+0211 208315     328            jb START_BUTTON, STATE0_DONE
+0214 C002       329            push AR2
+0216 7A32       329            mov R2, #50
+0218 120039     329            lcall ?Wait_Milli_Seconds
+021B D002       329            pop AR2; debounce time
+021D 208309     330            jb START_BUTTON, STATE0_DONE
+0220 3083FD     331            jnb START_BUTTON, $ ; Wait for key release
+0223 753201     332            mov CURRENT_STATE, #0x01
+0226 753A01     333            mov SHORT_BEEP, #0x01
+0229            334   STATE0_DONE:
+0229 0201CF     335            ljmp forever
+022C            336   STATE1:
+022C B40113     337            cjne a, #1, STATE2
+022F            338   
+022F 853935     339            mov PWM_FLAG, PWM_HIGH
+0232            340   
+0232 753300     341            mov SEC, #0
+0235 7496       342            mov a, #150
+0237 C3         343            clr c
+0238 9534       344            subb a, TEMP
+023A 5003       345            jnc STATE1_DONE
+023C 753202     346            mov CURRENT_STATE, #2
+023F            347   STATE1_DONE:
+023F 0201CF     348            ljmp forever
+0242            349   STATE2:
+0242 B40210     350            cjne a, #2, STATE3
+0245            351   
+0245 853835     352            mov PWM_FLAG, PWM_LOW
+0248            353   
+0248 743C       354            mov a, #60
+024A C3         355            clr c
+024B 9533       356            subb a, SEC
+024D 5003       357            jnc STATE2_DONE
+024F 753203     358            mov CURRENT_STATE, #3
+0252            359   STATE2_DONE:
+0252 0201CF     360            ljmp forever
+0255            361   STATE3:
+0255 B40313     362            cjne a, #3, STATE4
+0258            363   
+0258 853935     364            mov PWM_FLAG, PWM_HIGH
+025B            365   
+025B 753300     366            mov SEC, #0
+025E 74DC       367            mov a, #220
+0260 C3         368            clr c
+0261 9534       369            subb a, TEMP
+0263 5003       370            jnc STATE3_DONE
+0265 753204     371            mov CURRENT_STATE, #4
+0268            372   STATE3_DONE:
+0268 0201CF     373            ljmp forever
+026B            374   STATE4:
+026B B40410     375            cjne a, #4, STATE5
+026E            376   
+026E 853835     377            mov PWM_FLAG, PWM_LOW
+0271            378   
+0271 742D       379            mov a, #45
+0273 C3         380            clr c
+0274 9533       381            subb a, SEC
+0276 5003       382            jnc STATE4_DONE
+0278 753205     383            mov CURRENT_STATE, #5
+027B            384   STATE4_DONE:
+027B 0201CF     385            ljmp forever
+027E            386   STATE5:
+027E B40510     387            cjne a, #5, STATE5_DONE
+0281            388   
+0281 853735     389            mov PWM_FLAG, PWM_OFF
+0284            390   
+0284 753300     391            mov SEC, #0
+0287 743C       392            mov a, #60
+0289 C3         393            clr c
+028A 9534       394            subb a, TEMP
+028C 5003       395            jnc STATE5_DONE
+028E 753200     396            mov CURRENT_STATE, #0
+0291            397   STATE5_DONE:
+0291 0201CF     398            ljmp forever
