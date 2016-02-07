@@ -113,7 +113,7 @@ Timer0_ISR:
 	push acc
 	push psw
 	
-;************BEEPER************
+	;************BEEPER************
 	
 CHECK_SHORT_BEEP:
 	mov a, SHORT_BEEP
@@ -129,62 +129,49 @@ CHECK_LONG_BEEP:
 	;LONG BEEP ON
 
 	;**************PWM**************
-	
-	;CODED IN ACTIVE LOW
 
 CHECK_OFF:
 	mov a, PWM_FLAG
 	cjne a, PWM_OFF, CHECK_LOW
-	;PWM IS OFF
 	
-	;subb a, TEMP
-	;jnc STATE1_DONE
+	cpl SOUND_OUT
 	setb PWM_PIN
+	
+	sjmp CHECK_COMPLETE
 
-	ljmp FINISH_PWM_FLAG_CHECK
 CHECK_LOW:
+	mov a, PWM_FLAG
 	cjne a, PWM_LOW, CHECK_HIGH
-	;PWM IS LOW
+	
 	mov a, PWM_COUNTER
-	cjne a, PWM_LOW, FINISH_PWM_FLAG_CHECK
-	;PWM_COUNTER = PWM_LOW
+	cjne a, PWM_LOW, CHECK_COMPLETE
 
 	setb PWM_PIN
-
-	ljmp FINISH_PWM_FLAG_CHECK
-CHECK_HIGH:
-	;PWM IS HIGH
-	mov a, PWM_COUNTER
-	cjne a, PWM_HIGH, FINISH_PWM_FLAG_CHECK
-	;PWM_COUNTER = PWM_HIGH
 	
+	sjmp CHECK_COMPLETE
+
+CHECK_HIGH:
 	clr PWM_PIN
 
-FINISH_PWM_FLAG_CHECK: 
+CHECK_COMPLETE:
+	;incrementing
 	mov a, PWM_COUNTER
-	add a, #0x01
-	da a
+	add a, #1
 	mov PWM_COUNTER, a
 
-	cjne a, #100, FINISH_PWM
-	;PWM_COUNTER has reached 100
-	
-	;check if PWM is off (so don't clr pin)
-
-	mov a, PWM_FLAG
-	cjne a, PWM_OFF, CLR_PWM
-	
-	;PWM OFF
-	sjmp RESET_PWM_COUNTER 
-
-CLR_PWM:
-	clr PWM_PIN	
+	;checking for end of PWM
+	mov a, PWM_COUNTER
+	cjne a, #5, FINISH_T0
 
 RESET_PWM_COUNTER:
 	mov a, #0
-	mov PWM_COUNTER, a ;reset the counter 	
+	mov PWM_COUNTER, a
 
-FINISH_PWM:
+	mov a, PWM_FLAG
+	cjne a, PWM_LOW, FINISH_T0
+	clr PWM_PIN			
+	
+FINISH_T0:
 
 	pop psw
 	pop acc
@@ -293,10 +280,10 @@ main:
 	mov SEC, #0
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
-	mov PWM_FLAG, PWM_HIGH
+	mov PWM_FLAG, PWM_LOW
 	mov PWM_OFF, #0
-	mov PWM_LOW, #20
-	mov PWM_HIGH, #100
+	mov PWM_LOW, #1
+	mov PWM_HIGH, #5
 	mov SHORT_BEEP, #0
 	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
