@@ -1,3 +1,8 @@
+; ISR_example.asm: a) Increments/decrements a BCD variable every half second using
+; an ISR for timer 2; b) Generates a 2kHz square wave at pin P3.7 using
+; an ISR for timer 0; and c) in the 'main' loop it displays the variable
+; incremented/decremented using the ISR for timer 0 on the LCD.  Also resets it to 
+; zero if the 'BOOT' pushbutton connected to P4.5 is pressed.
 $NOLIST
 $MODLP52
 $LIST
@@ -8,11 +13,11 @@ TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
-next_line EQU $
+SOUND_OUT     equ P3.7
 
 ; Reset vector
 org 0000H
-    ljmp global_init
+    ljmp main
 
 ; External interrupt 0 vector (not used in this code)
 org 0003H
@@ -39,18 +44,27 @@ org 002BH
 	ljmp Timer2_ISR
 
 dseg at 30h
-Count1ms: ds 2
-buffer_temp: ds 2
-buffer_time: ds 2
-soak_temp: ds 2
-soak_time: ds 2
-reflow_temp: ds 2
-reflow_time: ds 2
-
+Count1ms:     ds 2 ; Used to determine when half second has passed
+second_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
+minute_counter: ds 1
+hour_counter: ds 1
+alarm_second: ds 1 ;Holds the alarm digits
+alarm_minute: ds 1
+alarm_hour: ds 1
+buffer_second: ds 1 ;Buffer for user entry
+buffer_minute: ds 1
+buffer_hour: ds 1
+number_of_beeps: ds 1
 bseg
 seconds_flag: dbit 1 ; Set to one in the ISR every time 1000 ms had passed
-oven_on: dbit 1 ; One means oven is on
-reflow_setup: dbit 1 ; One means user is setting reflow
+pm_flag: dbit 1 ; Set to one for pm
+pm_flag_alarm: dbit 1
+pm_flag_buffer: dbit 1
+alarm_on: dbit 1 ; One means alarm is on
+alarm_setup: dbit 1 ; One means user is setting alarm
+alarm_trigger: dbit 1
+timer_alternator: dbit 1
+output: dbit 1
 cseg
 ; These 'equ' must match the wiring between the microcontroller and the LCD!
 LCD_RS equ P1.4
@@ -64,27 +78,37 @@ LCD_D7 equ P3.5
 USR_SET equ P2.6
 USR_UP equ P2.3
 USR_DOWN equ P2.0
-USR_RUN equ P0.6
+USR_ALRM equ P0.6
+; Output to arduino
+SECONDS1 equ P1.0
+SECONDS2 equ P1.1
+SECONDS3 equ P1.2
+SECONDS4 equ P1.3
+
+SECONDS5 equ P0.0
+SECONDS6 equ P0.1
+SECONDS7 equ P0.2
+SECONDS8 equ P0.3
 
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
-$include(tristan_lib.inc)
 $LIST
 
 ;                     1234567890123456    <- This helps determine the position of the counter
-Oven_Default_Message1: db 's:xxxs  xxxC xxx', 0
-Oven_Default_Message2: db 'r:xxxs  xxxC    ', 0
-Oven_Off_Message: db 'off', 0
-Oven_On_Message:  db 'run', 0
-Colon: db ':', 0
-Soak_Or_Reflow_Message1:   db '  soak  reflow  ', 0
-Soak_Or_Reflow_Message2:   db '  (up)  (down)  ', 0
-Time_Message:     db 'time: xxxxs     ', 0
-Temp_Message:     db 'temp: xxxxC     ', 0
-Okay_Message:     db 'xxxxs xxxxC  ok?', 0
+Initial_Message:  db 'time:xx:xx:xx xx', 0
+Alarm_Message:    db 'alrm:xx:xx:xx xx', 0
+No_Alarm_Message: db 'alrm: off       ', 0
+AM_Message:  db 'AM', 0
+PM_Message:  db 'PM', 0
+Time_Or_Alarm1:   db '  time   alarm  ', 0
+Time_Or_Alarm2:   db '  (up)  (down)  ', 0
+Time_Hour:        db 'hour: xx        ', 0
+Time_Minute:      db 'minute: xx      ', 0
+Time_Second:      db 'second: xx      ', 0
+Time_PM:          db 'AM/PM:  xx      ', 0
+Okay_Message:     db 'xx:xx:xx xx  ok?', 0
 Continue:         db 'set to continue ', 0
 Clear:            db '                ', 0
-Space: db ' ', 0
                       
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -100,11 +124,11 @@ Timer0_Init:
 	mov TH0, #high(TIMER0_RELOAD)
 	mov TL0, #low(TIMER0_RELOAD)
 	; Enable the timer and interrupts
-	setb ET0  ; Enable timer 0 interrupt
-	setb TR0  ; Start timer 0
-	setb EA   ; Enable Global interrupts
-	pop psw
-	pop acc
+    setb ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
+    setb EA   ; Enable Global interrupts
+    pop psw
+    pop acc
 	ret
 
 ;---------------------------------;
@@ -113,9 +137,13 @@ Timer0_Init:
 ; 2048 Hz square wave at pin P3.7 ;
 ;---------------------------------;
 Timer0_ISR:
+	push psw
+	jnb alarm_trigger, no_alarms
+	jnb timer_alternator, no_alarms
 	; Define a latency correction for the timer reload
 	CORRECTION EQU (4+4+2+2+4+4) ; lcall+ljmp+clr+mov+mov+setb
 
+	cpl SOUND_OUT ; Connect speaker to P3.7!
 
 
 no_alarms:
@@ -124,6 +152,7 @@ no_alarms:
 	mov TH0, #high(TIMER0_RELOAD+CORRECTION)
 	mov TL0, #low(TIMER0_RELOAD+CORRECTION)
 	setb TR0
+	pop psw
 	reti
 
 ;---------------------------------;
@@ -141,10 +170,10 @@ Timer2_Init:
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Enable the timer and interrupts
-	setb ET2  ; Enable timer 2 interrupt
-	setb TR2  ; Enable timer 2
-	setb EA   ; Enable Global interrupts
-	pop acc
+    setb ET2  ; Enable timer 2 interrupt
+    setb TR2  ; Enable timer 2
+    setb EA   ; Enable Global interrupts
+    pop acc
 	ret
 
 ;---------------------------------;
@@ -167,9 +196,9 @@ Timer2_ISR:
 Inc_Done:
 	; Check if one second has passed
 	mov a, Count1ms+0
-	cjne a, #low(1000), exit
+	cjne a, #low(1000), exit_jumper
 	mov a, Count1ms+1
-	cjne a, #high(1000), exit
+	cjne a, #high(1000), exit_jumper
 	
 	; 1000 milliseconds have passed.  Set a flag so the main program knows
 	setb seconds_flag ; Let the main program know half second had passed
@@ -179,6 +208,142 @@ Inc_Done:
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	
+	; Increment the seconds if less than 59
+Seconds:
+	mov a, second_counter
+	cjne a, #0x59, Seconds_Less_Than_59 
+	clr a
+	lcall Seconds_da	
+Minutes:
+	mov a, minute_counter
+	cjne a, #0x59, Minutes_Less_Than_59
+	clr a
+	lcall Minutes_da
+Check_for_AMPM:
+	mov a, hour_counter
+	cjne a, #0x11, Hours	
+	cpl pm_flag		
+Hours:
+	cjne a, #0x12, Hours_Less_Than_12
+	mov a, #0x01
+	lcall Hours_da
+	sjmp Timer2_ISR_done
+	
+Hours_Less_Than_12:
+	add a, #0x01
+	lcall Hours_da
+	sjmp Timer2_ISR_done	
+
+Minutes_Less_Than_59:
+	add a, #0x01
+	lcall Minutes_da
+	sjmp Timer2_ISR_done	
+	
+Seconds_Less_Than_59:
+	add a, #0x01
+	lcall Seconds_da
+	sjmp Timer2_ISR_done
+
+Seconds_da:
+	da a
+	mov second_counter, a
+	ret
+
+Minutes_da:
+	da a
+	mov minute_counter, a
+	ret
+	
+Hours_da:
+	da a
+	mov hour_counter, a
+	ret
+	
+exit_jumper:
+	ljmp exit
+		
+Timer2_ISR_done:
+	; if alarm is on alternate it
+	djnz number_of_beeps, arduino
+	clr alarm_trigger
+	
+arduino:	
+; write to arduino output pins
+	mov a, second_counter
+	
+	setb SECONDS1
+    setb SECONDS2
+    setb SECONDS3
+    setb SECONDS4
+    setb SECONDS5
+    setb SECONDS6
+    setb SECONDS7
+    setb SECONDS8
+	;output shift routine
+output_1:		
+	rlc a 
+	mov output, c
+	jnb output, output_2
+	clr SECONDS1
+output_2:
+    rlc a 
+	mov output, c
+	jnb output, output_3
+	clr SECONDS2
+output_3:
+    rlc a 
+	mov output, c
+	jnb output, output_4
+	clr SECONDS3
+output_4:
+    rlc a 
+	mov output, c
+	jnb output, output_5
+	clr SECONDS4
+output_5:
+    rlc a 
+	mov output, c
+	jnb output, output_6
+	clr SECONDS5
+output_6:
+    rlc a 
+	mov output, c
+	jnb output, output_7
+	clr SECONDS6
+output_7:
+    rlc a 
+	mov output, c
+	jnb output, output_8
+	clr SECONDS7
+output_8:
+    rlc a 
+	mov output, c
+	jnb output, alternate
+	clr SECONDS8	
+	
+alternate:
+	cpl timer_alternator
+	setb SOUND_OUT
+	; check if alarm should be triggered
+	jnb alarm_on, exit
+same_seconds:
+	mov a, alarm_hour
+	cjne a, hour_counter, exit
+	mov a, alarm_minute
+	cjne a, minute_counter, exit 
+	mov a, alarm_second
+	cjne a, second_counter, exit
+	
+	jb pm_flag, is_pm
+	jb pm_flag_alarm, exit
+	setb alarm_trigger
+	mov number_of_beeps, #0x08
+	sjmp exit
+	
+is_pm:	
+	jnb pm_flag_alarm, exit
+	setb alarm_trigger
+	mov number_of_beeps, #0x08
 exit:	
 	pop psw
 	pop acc
@@ -189,412 +354,463 @@ exit:
 ; initialization and 'forever'    ;
 ; loop.                           ;
 ;---------------------------------;
-global_init:
-	; Initialization
-	mov SP, #7FH
-	mov PMOD, #0 ; Configure all ports in bidirectional mode
-	lcall Timer0_Init
-	lcall Timer2_Init
-	lcall LCD_4BIT
-	lcall oven_init
-	setb seconds_flag
-	lcall draw_main_menu
-	
 main:
-
-wait_one_second:
-	jnb seconds_flag, wait_one_second
-	clr seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 0
-
-	lcall UI_update
-
-	sjmp main
-
-;-------------------------------------------------------------------;
-; UI subroutine                                                     ;
-; 								    ;
-; 1) See if oven is on, only let user change times/temps            ;
-;    if the oven is not running                                     ;
-;                                                                   ;
-; 2) User chooses to edit soak or reflow times/temps                ;
-;                                                                   ;
-; 3) User chooses time then temperature for soak or reflow cycle    ;
-;                                                                   ;
-; 4) User gets confirmation screen, set to continue else disregard  ;
-;    changes                                                        ;
-;                                                                   ;
-; 5) Write changes from selection buffer to either reflow or soak   ;
-;                                                                   ;
-;-------------------------------------------------------------------; 
-UI_update:
-UI_start:
-	Button(USR_RUN, next_line, check_if_on)
-	cpl oven_on
-
-check_if_on:
-	jb oven_on, oven_is_on
-	ljmp oven_is_off
-	
-oven_is_on:	
-	Set_Cursor(1, 14)
-        Send_Constant_String(#Oven_On_Message)
-	sjmp user_control
+	; Initialization
+    mov SP, #7FH
+    mov PMOD, #0 ; Configure all ports in bidirectional mode
+    mov number_of_beeps, #0x00
+    clr timer_alternator
+    clr alarm_trigger
+    lcall Timer0_Init
+    lcall Timer2_Init
+    lcall LCD_4BIT
+    ; For convenience a few handy macros are included in 'LCD_4bit.inc':
+	Set_Cursor(1, 1)
+    Send_Constant_String(#Initial_Message)
+    setb seconds_flag
+    clr pm_flag
+    clr pm_flag_buffer
+    setb pm_flag_alarm
+    clr alarm_setup
+    setb alarm_on
     
-oven_is_off:	
-	Set_Cursor(1, 14)
-        Send_Constant_String(#Oven_Off_Message) 
-user_control:
-	; if oven is running, user cannot adjust settings
-	jnb oven_on, setup_mode
-	ret
+    setb SECONDS1
+    setb SECONDS2
+    setb SECONDS3
+    setb SECONDS4
+    setb SECONDS5
+    setb SECONDS6
+    setb SECONDS7
+    setb SECONDS8
 
-setup_mode:
-	Button(USR_SET, set_pressed, no_setup)	
+	mov second_counter, #0x56
+	mov minute_counter, #0x59
+	mov hour_counter, #0x05
+	
+	mov buffer_second, #0x00
+	mov buffer_minute, #0x00
+	mov buffer_hour, #0x12
+	
+	mov alarm_second, #0x00
+	mov alarm_minute, #0x00
+	mov alarm_hour, #0x01
+	
+	; After initialization the program stays in this 'forever' loop
+loop:
 
-no_setup:
-	ret
+loop_a:
+	jnb seconds_flag, loop
+loop_b:
+    clr seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 0
+	Set_Cursor(1, 1)
+    Send_Constant_String(#Initial_Message)
+	Set_Cursor(1, 12)     ; the place in the LCD where we want the BCD counter value
+	Display_BCD(second_counter) ; This macro is also in 'LCD_4bit.inc'
+	Set_Cursor(1, 9)
+	Display_BCD(minute_counter)
+	Set_Cursor(1, 6)
+	Display_BCD(hour_counter)
+	
+	jb pm_flag, its_pm ; If it's PM jump to set pm loop
+		
+	Set_Cursor(1, 15)
+    Send_Constant_String(#AM_message)
+    ljmp alarm		
+	
+its_pm:
+	Set_Cursor(1, 15)
+    Send_Constant_String(#PM_message)
+    
+alarm:
+	
+	jb USR_ALRM, check_alarm  
+	Wait_Milli_Seconds(#50)	 
+	jb USR_ALRM, check_alarm  
+	jnb USR_ALRM, $
+	cpl alarm_on
+
+check_alarm:
+	jb alarm_on, alarm_is_on
+	ljmp no_alarm
+	
+alarm_is_on:	
+	Set_Cursor(2, 1)
+    Send_Constant_String(#Alarm_message)
+    
+	Set_Cursor(2, 12)     
+	Display_BCD(alarm_second)
+	Set_Cursor(2, 9)
+	Display_BCD(alarm_minute)
+	Set_Cursor(2, 6)
+	Display_BCD(alarm_hour)
  
+ 	jb pm_flag_alarm, alarm_is_pm ; If it's PM jump to set pm loop
+		
+	Set_Cursor(2, 15)
+    Send_Constant_String(#AM_message)
+    sjmp user_control
+    
+alarm_is_pm:
+	Set_Cursor(2, 15)
+    Send_Constant_String(#PM_message)
+    sjmp user_control	
+    
+no_alarm:	
+	Set_Cursor(2, 1)
+    Send_Constant_String(#No_Alarm_message)	 
+	
+user_control:
+   ; Enter setup mode if user presses 'set' button
+   	jb USR_SET, done_main_1  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, done_main_1  ; if the 'set' button is not pressed skip
+	jnb USR_SET, set_pressed		; wait for button release
+	
+	done_main_1:
+	ljmp loop
+   
 set_pressed:
 	Set_Cursor(1, 1)
-	Send_Constant_String(#Soak_Or_Reflow_Message1)    
-	Set_Cursor(2, 1)
-	Send_Constant_String(#Soak_Or_Reflow_Message2)  
+    Send_Constant_String(#Time_Or_Alarm1)    
+ 	Set_Cursor(2, 1)
+    Send_Constant_String(#Time_Or_Alarm2)  
 
 choose_time:    
-	Button(USR_UP, time_buffer, choose_alarm)
+   ; Enter time mode if user presses 'up' button
+   	jb USR_UP, choose_alarm  ; if the 'up' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_UP, choose_alarm  ; if the 'up' button is not pressed skip
+	jnb USR_UP, time_buffer	; wait for button release
 
 choose_alarm:
-	Button(USR_DOWN, reflow_bit_set, choose_time)
+   ; Enter alarm mode if user presses 'down' button
+   	jb USR_DOWN, choose_time  ; if the 'down' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_DOWN, choose_time  ; if the 'up' button is not pressed skip
+	jnb USR_DOWN, alarm_bit_set	; wait for button release
 
-reflow_bit_set:
-	setb reflow_setup
-
-;-----------------------------;
-; Time                        ;	
-;-----------------------------;
+alarm_bit_set:
+	setb alarm_setup
+	
 time_buffer:
 	Set_Cursor(1, 1)
-    	Send_Constant_String(#Time_Message)
+    Send_Constant_String(#Time_hour) 
  	Set_Cursor(2, 1)
-    	Send_Constant_String(#Continue) 
+    Send_Constant_String(#Continue) 
     
-time_loop:
-	Set_Cursor(1, 9)
-	Display_BCD(buffer_time)
-	
+hour_buffer:
 	Set_Cursor(1, 7)
-	Display_BCD(buffer_time + 1)
-
-	Set_Cursor(1, 7)
-	Send_Constant_String(#Space)
+	Display_BCD(buffer_hour)
 	
 	Wait_Milli_Seconds(#150)	; delay so user doesn't accidentally press something
 
-        ;jump to minute if user presses 'set' button
-	Button(USR_SET, temp_buffer, time_select)
-time_select:
-time_up_button:
-	Button(USR_UP, time_up, time_down_button)
-time_down_button:
-	Button(USR_DOWN, time_down, time_loop)
-time_up:
-	mov a, buffer_time
-	cjne a, #0x99, time_up_under_99
-	mov a, #0x00
-	lcall buffer_time_da
-time_hundreds_up:
-	mov a, buffer_time + 1
-	cjne a, #0x08, time_hundreds_up_over
-	mov a, #0x00
-	mov buffer_time + 1, a
-	ljmp time_loop
-time_hundreds_up_over:
-	add a, #0x01
-	da a
-	mov buffer_time + 1, a
-	ljmp time_loop
-time_up_under_99:
-	add a, #0x01
-	lcall buffer_time_da
-	ljmp time_loop
+   ; jump to minute if user presses 'set' button
+   	jb USR_SET, choose_hour  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, choose_hour  ; if the 'set' button is not pressed skip
+	jnb USR_SET, minute_message		; wait for button release
+	
+choose_hour:
+hour_up_button:
+   	jb USR_UP, hour_down_button  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_UP, hour_down_button  
+	jnb USR_UP, hour_up
+hour_down_button:
+   	jb USR_DOWN, hour_buffer  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_DOWN, hour_buffer  
+	jnb USR_DOWN, hour_down
 
-time_down:
-	mov a, buffer_time
-	cjne a, #0x00, time_down_over_0
-	mov a, #0x99
-	lcall buffer_time_da
-time_hundreds_down:
-	mov a, buffer_time + 1
-	cjne a, #0x00, time_hundreds_down_under
-	mov a, #0x08
-	da a
-	mov buffer_time + 1, a
-	ljmp time_loop
-time_hundreds_down_under:
-	add a, #0x99
-	da a
-	mov buffer_time +1, a	
-	ljmp time_loop
-time_down_over_0:
-	add a, #0x99
-	lcall buffer_time_da
-	ljmp time_loop
+hour_up:
+	mov a, buffer_hour
+	cjne a, #0x12, hour_up_under_12
+	mov a, #0x01
+	lcall buffer_hours_da
+	sjmp hour_buffer
+	
+hour_up_under_12:
+	add a, #0x01
+	lcall buffer_hours_da
+	sjmp hour_buffer
 
-;-----------------------------;
-; Temperature                 ;	
-;-----------------------------;
-temp_buffer:
+hour_down:
+	mov a, buffer_hour
+	cjne a, #0x01, hour_down_over_1
+	mov a, #0x12
+	lcall buffer_hours_da
+	sjmp hour_buffer
+	
+hour_down_over_1:
+	add a, #0x99
+	lcall buffer_hours_da
+	sjmp hour_buffer
+; minute message
+minute_message:
    	Set_Cursor(1, 1)
-        Send_Constant_String(#Temp_Message) 
+    Send_Constant_String(#Time_Minute) 
     
-temp_loop:
+minute_buffer:
 	Set_Cursor(1, 9)
-	Display_BCD(buffer_temp)
+	Display_BCD(buffer_minute)
 	
-	Set_Cursor(1, 7)
-	Display_BCD(buffer_temp + 1)
+	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
 
-	Set_Cursor(1, 7)
-	Send_Constant_String(#Space)
+   ; jump to minute if user presses 'set' button
+   	jb USR_SET, choose_minute  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, choose_minute  ; if the 'set' button is not pressed skip
+	jnb USR_SET, $		; wait for button release
+	ljmp second_message
 	
-	Wait_Milli_Seconds(#150)	; delay so user doesn't accidentally press something
+choose_minute:
+minute_up_button:
+   	jb USR_UP, minute_down_button  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_UP, minute_down_button  
+	jnb USR_UP, minute_up
+minute_down_button:
+   	jb USR_DOWN, minute_buffer  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_DOWN, minute_buffer  
+	jnb USR_DOWN, minute_down
 
-        ; jump to minute if user presses 'set' button
-	Button(USR_SET, ok_message, temp_select)
-	
-temp_select:
-temp_up_button:
-	Button(USR_UP, temp_up, temp_down_button)
-temp_down_button:
-	Button(USR_DOWN, temp_down, temp_loop)
-temp_up:
-	mov a, buffer_temp
-	cjne a, #0x99, temp_up_under_99
+minute_up:
+	mov a, buffer_minute
+	cjne a, #0x59, minute_up_under_59
 	mov a, #0x00
-	lcall buffer_temp_da
-temp_hundreds_up:
-	mov a, buffer_temp + 1
-	cjne a, #0x08, temp_hundreds_up_over
+	lcall buffer_minutes_da
+	sjmp minute_buffer
+	
+minute_up_under_59:
+	add a, #0x01
+	lcall buffer_minutes_da
+	sjmp minute_buffer
+
+minute_down:
+	mov a, buffer_minute
+	cjne a, #0x00, minute_down_over_0
+	mov a, #0x59
+	lcall buffer_minutes_da
+	sjmp minute_buffer
+	
+minute_down_over_0:
+	add a, #0x99
+	lcall buffer_minutes_da
+	sjmp minute_buffer	
+	
+;seconds
+second_message:
+   	Set_Cursor(1, 1)
+    Send_Constant_String(#Time_Second) 
+    
+second_buffer:
+	Set_Cursor(1, 9)
+	Display_BCD(buffer_second)
+	
+	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
+
+   ; jump to second if user presses 'set' button
+   	jb USR_SET, choose_second  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, choose_second  ; if the 'set' button is not pressed skip
+	jnb USR_SET, ampm_message		; wait for button release
+	
+choose_second:
+second_up_button:
+   	jb USR_UP, second_down_button  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_UP, second_down_button  
+	jnb USR_UP, second_up
+second_down_button:
+   	jb USR_DOWN, second_buffer  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_DOWN, second_buffer  
+	jnb USR_DOWN, second_down
+
+second_up:
+	mov a, buffer_second
+	cjne a, #0x59, second_up_under_59
 	mov a, #0x00
-	mov buffer_temp + 1, a
-	ljmp temp_loop
-temp_hundreds_up_over:
+	lcall buffer_seconds_da
+	sjmp second_buffer
+	
+second_up_under_59:
 	add a, #0x01
-	da a
-	mov buffer_temp + 1, a
-	ljmp temp_loop
-temp_up_under_99:
-	add a, #0x01
-	lcall buffer_temp_da
-	ljmp temp_loop
+	lcall buffer_seconds_da
+	sjmp second_buffer
 
-temp_down:
-	mov a, buffer_temp
-	cjne a, #0x00, temp_down_over_0
-	mov a, #0x99
-	lcall buffer_temp_da
-temp_hundreds_down:
-	mov a, buffer_temp + 1
-	cjne a, #0x00, temp_hundreds_down_under
-	mov a, #0x08
-	da a
-	mov buffer_temp + 1, a
-	ljmp temp_loop
-temp_hundreds_down_under:
+second_down:
+	mov a, buffer_second
+	cjne a, #0x00, second_down_over_0
+	mov a, #0x59
+	lcall buffer_seconds_da
+	sjmp second_buffer
+	
+second_down_over_0:
 	add a, #0x99
-	da a
-	mov buffer_temp + 1, a	
-	ljmp temp_loop
-temp_down_over_0:
-	add a, #0x99
-	lcall buffer_temp_da
-	ljmp temp_loop
+	lcall buffer_seconds_da
+	sjmp second_buffer	
 
-buffer_time_da:
+buffer_seconds_da:
 	da a
-	mov buffer_time, a
+	mov buffer_second, a
+	ret
+
+buffer_minutes_da:
+	da a
+	mov buffer_minute, a
 	ret
 	
-buffer_temp_da:
+buffer_hours_da:
 	da a
-	mov buffer_temp, a
+	mov buffer_hour, a
 	ret
+
+ampm_message:
+	Set_Cursor(1, 1)
+    Send_Constant_String(#Time_PM)
+     
+ampm_buffer:
+	Set_Cursor(1, 9)
+	jb pm_flag_buffer, buffer_pm
+    Send_Constant_String(#AM_message)
+    sjmp buffer_set		
+buffer_pm:	
+	Send_Constant_String(#PM_message)
+	
+buffer_set:	
+	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
+
+   ; jump to second if user presses 'set' button
+   	jb USR_SET, choose_ampm  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, choose_ampm  ; if the 'set' button is not pressed skip
+	jnb USR_SET, ok_message		; wait for button release
+	
+choose_ampm:
+ampm_up_button:
+   	jb USR_UP, ampm_down_button  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_UP, ampm_down_button  
+	jnb USR_UP, ampm_up
+ampm_down_button:
+   	jb USR_DOWN, ampm_buffer  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_DOWN, ampm_buffer  
+	jnb USR_DOWN, ampm_down
+
+ampm_up:
+	cpl pm_flag_buffer
+	sjmp ampm_buffer
+	
+ampm_down:
+	cpl pm_flag_buffer
+	sjmp ampm_buffer
 
 ok_message:
    	Set_Cursor(1, 1)
-	Send_Constant_String(#Okay_Message) 	
-	Set_Cursor(2, 1)
-	Send_Constant_String(#Continue)
+    Send_Constant_String(#Okay_Message) 	
 
+	Set_Cursor(1, 7)   
+	Display_BCD(buffer_second) 
+	Set_Cursor(1, 4)
+	Display_BCD(buffer_minute)
 	Set_Cursor(1, 1)
-	Display_BCD(buffer_time + 1)
-	Set_Cursor(1, 3)
-	Display_BCD(buffer_time)
+	Display_BCD(buffer_hour)
 
-	Set_Cursor(1, 7)
-	Display_BCD(buffer_temp + 1)
-	Set_Cursor(1, 9)
-	Display_BCD(buffer_temp)	
-
-	Set_Cursor(1, 1)
-	Send_Constant_String(#Space)
-	Set_Cursor(1, 7)
-	Send_Constant_String(#Space)
-
+	Set_Cursor(1, 10)
+	jb pm_flag_buffer, ok_ampm
+    Send_Constant_String(#AM_message)
+    sjmp ok_buffer		
+ok_ampm:	
+	Send_Constant_String(#PM_message)
+		
 ok_buffer:
    	
 	Wait_Milli_Seconds(#200)	; delay so user doesn't accidentally press something
 
-	Button(USR_SET, writeback_soak, choose_ok)
+   ; jump to second if user presses 'set' button
+   	jb USR_SET, choose_ok  ; if the 'set' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb USR_SET, choose_ok  ; if the 'set' button is not pressed skip
+	jnb USR_SET, writeback		; wait for button release
 
 choose_ok:
 ok_up_button:
-	Button(USR_UP, ok_up, ok_down_button)
+   	jb USR_UP, ok_down_button  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_UP, ok_down_button  
+	jnb USR_UP, ok_up
 ok_down_button:
-	Button(USR_DOWN, ok_down, ok_buffer)
+   	jb USR_DOWN, ok_buffer  
+	Wait_Milli_Seconds(#100)	 
+	jb USR_DOWN, ok_buffer  
+	jnb USR_DOWN, ok_down
+
 ok_up:
 	lcall reset_buffer
 	Wait_Milli_Seconds(#200)
-	ljmp done_UI
+	ljmp loop
 	
 ok_down:
 	lcall reset_buffer
 	Wait_Milli_Seconds(#200)
-	ljmp done_UI
-
-
+	ljmp loop  
 	 
-writeback_soak:
-	jb reflow_setup, writeback_reflow
+writeback:
+	jb alarm_setup, chose_alarm
 	
-	mov a, buffer_time + 1
-	mov soak_time + 1, a
-	mov a, buffer_time
-	mov soak_time, a
-
-	mov a, buffer_temp + 1
-	mov soak_temp + 1, a
-	mov a, buffer_temp
-	mov soak_temp, a
-
-	sjmp done_writeback
+	;turn off interupts
+    clr EA   ; disable Global interrupts	
+	;write to time regs
+	mov a, buffer_second
+	mov second_counter, a
+	mov a, buffer_minute
+	mov minute_counter, a
+	mov a, buffer_hour
+	mov hour_counter, a
+	jb pm_flag_buffer, write_pm
+	clr pm_flag
+	sjmp done_writeback_1
 	
-writeback_reflow:
+write_pm:	
+	setb pm_flag
 	
-	mov a, buffer_time + 1
-	mov reflow_time + 1, a
-	mov a, buffer_time
-	mov reflow_time, a
-
-	mov a, buffer_temp + 1
-	mov reflow_temp + 1, a
-	mov a, buffer_temp
-	mov reflow_temp, a
-
-	sjmp done_writeback
-	
-done_writeback:
+done_writeback_1:
 	lcall reset_buffer
 	Wait_Milli_Seconds(#200)
-	ljmp done_UI
-
+    lcall Timer0_Init
+    lcall Timer2_Init
+    setb seconds_flag
+    ljmp loop	
+	
+chose_alarm:
+	;write to alarm regs
+	mov a, buffer_second
+	mov alarm_second, a
+	mov a, buffer_minute
+	mov alarm_minute, a
+	mov a, buffer_hour
+	mov alarm_hour, a
+	jb pm_flag_buffer, write_alarm_pm
+	clr pm_flag_alarm 
+	sjmp done_writeback_2
+	
+write_alarm_pm:
+    setb pm_flag_alarm
+       
+done_writeback_2: 
+	lcall reset_buffer
+	Wait_Milli_Seconds(#200)   			
+    ljmp loop
+ 
 reset_buffer:
-	mov buffer_time + 1, #0x02
-	mov buffer_time, #0x50
-	mov buffer_temp + 1, #0x01
-	mov buffer_temp, #0x45
-	clr reflow_setup
+	mov buffer_second, #0x00
+	mov buffer_minute, #0x00
+	mov buffer_hour, #0x12
+	clr pm_flag_buffer
+	clr alarm_setup
 	ret    
-
-oven_init:
-	clr reflow_setup
-	clr oven_on
-buffer_initial:
-	mov buffer_temp + 1, #0x03
-	mov buffer_temp, #0x50
-
-	mov buffer_time + 1, #0x01
-	mov buffer_time, #0x45
-soak_initial:
-	mov soak_time + 1, #0x02
-	mov soak_time, #0x50
-
-	mov soak_temp + 1, #0x01
-	mov soak_temp, #0x45
-
-reflow_initial:
-	mov reflow_time + 1, #0x02
-	mov reflow_time, #0x50
-
-	mov reflow_temp + 1, #0x01
-	mov reflow_temp, #0x45
-	ret
-draw_main_menu:
-
-	Set_Cursor(1, 1)
-	Send_Constant_String(#Oven_Default_Message1)
-	Set_Cursor(2, 1)
-	Send_Constant_String(#Oven_Default_Message2)	
-
-draw_values:
-	Set_Cursor(1, 2)
-	Display_BCD(soak_time + 1)
-	Set_Cursor(1, 4)
-	Display_BCD(soak_time)
- 	Set_Cursor(2, 2)
-	Display_BCD(reflow_time + 1)
-	Set_Cursor(2, 4)
-	Display_BCD(reflow_time)
-
-	Set_Cursor(1, 8)
-	Display_BCD(soak_temp + 1)
-	Set_Cursor(1, 10)
-	Display_BCD(soak_temp)
- 	Set_Cursor(2, 8)
-	Display_BCD(reflow_temp + 1)
-	Set_Cursor(2, 10)
-	Display_BCD(reflow_temp)
-
-	Set_Cursor(1, 2)
-	Send_Constant_String(#Colon)
-	Set_Cursor(2, 2)
-	Send_Constant_String(#Colon)
-
-	Set_Cursor(1, 8)
-	Send_Constant_String(#Space)
-	Set_Cursor(2, 8)
-	Send_Constant_String(#Space)
-
-	jb oven_on, main_menu_oven_is_on
-	Set_Cursor(1, 14)
-	Send_Constant_String(#Oven_Off_Message)
-	sjmp done_main_menu
-	
-main_menu_oven_is_on:	
-	Set_Cursor(1, 14)
-        Send_Constant_String(#Oven_On_Message)
-	
-done_main_menu:
-
-	ret
-
-done_UI:
-	lcall draw_main_menu
-	Wait_Milli_Seconds(#200)
-	Wait_Milli_Seconds(#200)
-	Wait_Milli_Seconds(#200)
-	Wait_Milli_Seconds(#200)
-
-	ret
-;-----------------------------------;
-; End of UI                         ;
-;-----------------------------------;
-
-
-
-
-
-
-
-
+     
 END

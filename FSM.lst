@@ -3,26 +3,17 @@
 0000              5   CLK           EQU 22118400 ; Microcontroller system crystal frequency in Hz
 0000              6   TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 0000              7   TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
-0000              8   TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
+0000              8   TIMER2_RATE   EQU 500     ; 1000Hz, for a timer tick of 1ms
 0000              9   TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 0000             10   
 0000             11   BOOT_BUTTON     EQU P4.5 ;reset button
 0000             12   SOUND_OUT       EQU P3.7
-<<<<<<< HEAD
 0000             13   PWM_PIN                  EQU P0.0 ;change later
-0000             14   START_BUTTON     EQU P0.2 ;start button
-0000             15   
-0000             16   ; Reset vector
-0000             17   org 0000H
-0000 0201E8      18       ljmp main
-=======
-0000             13   PWM_PIN                  EQU P0.1 ;change later
 0000             14   START_BUTTON     EQU P0.3 ;start button
 0000             15   
 0000             16   ; Reset vector
 0000             17   org 0000H
-0000 02019D      18       ljmp main
->>>>>>> origin/master
+0000 020190      18       ljmp main
 0003             19   
 0003             20   ; External interrupt 0 vector (not used in this code)
 0003             21   org 0003H
@@ -30,7 +21,7 @@
 0004             23   
 0004             24   ; Timer/Counter 0 overflow interrupt vector
 000B             25   org 000BH
-000B 0200F8      26            ljmp Timer0_ISR
+000B 0200F1      26            ljmp Timer0_ISR
 000E             27   
 000E             28   ; External interrupt 1 vector (not used in this code)
 0013             29   org 0013H
@@ -46,18 +37,14 @@
 0024             39            
 0024             40   ; Timer/Counter 2 overflow interrupt vector
 002B             41   org 002BH
-<<<<<<< HEAD
-002B 02015E      42            ljmp Timer2_ISR
-=======
-002B 020157      42            ljmp Timer2_ISR
->>>>>>> origin/master
+002B 020146      42            ljmp Timer2_ISR
 002E             43   
 0030             44   dseg at 30h
 0030             45   Count1ms:        ds 2 ; Used to determine when half second has passed
 0032             46   CURRENT_STATE:   ds 1 ;current state 
 0033             47   
 0033             48   ;FSM VARIABLES
-0033             49   SEC_COUNTER:     ds 1 ;timer
+0033             49   SEC:                     ds 1 ;timer
 0034             50   TEMP:                    ds 1 ;temperature
 0035             51   
 0035             52   ;PWM VARIABLES
@@ -68,473 +55,13 @@
 0039             57   PWM_HIGH:                ds 1
 003A             58   
 003A             59   ;BEEPER FEEDBACK VARIABLES
-003A             60   ;SHORT_BEEP:             ds 1
-003A             61   SHORT_BEEP_COUNTER: ds 1
-003B             62   ;LONG_BEEP:              ds 1
-003B             63   ;LONG_BEEP_COUNTER: ds 1
-003B             64   
+003A             60   SHORT_BEEP:              ds 1
+003B             61   SHORT_BEEP_COUNTER: ds 1
+003C             62   LONG_BEEP:               ds 1
+003D             63   LONG_BEEP_COUNTER: ds 1
+003E             64   
 0000             65   bseg
 0000             66   half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
-<<<<<<< HEAD
-0001             67   start_reload_flag: dbit 1
-0002             68   start_sec_counter_state2_flag: dbit 1
-0003             69   start_sec_counter_state4_flag: dbit 1
-0004             70   state3_transition_flag: dbit 1
-0005             71   state5_transition_flag: dbit 1
-0006             72   state_transition_beep_flag: dbit 1
-0007             73   long_beep_flag: dbit 1
-0008             74   
-0008             75   
-002E             76   cseg
-002E             77   ; These 'equ' must match the wiring between the microcontroller and the LCD!
-002E             78   LCD_RS equ P1.4
-002E             79   LCD_RW equ P1.5
-002E             80   LCD_E  equ P1.6
-002E             81   LCD_D4 equ P3.2
-002E             82   LCD_D5 equ P3.3
-002E             83   LCD_D6 equ P3.4
-002E             84   LCD_D7 equ P3.5
-                 86   	$LIST
-00DC             88   
-00DC             89   ;
-00DC 53746174    90   Display_State_Message:  db 'State:', 0
-     653A00
-00E3             91   
-00E3             92   ;---------------------------------;
-00E3             93   ; Routine to initialize the ISR   ;
-00E3             94   ; for timer 0                     ;
-00E3             95   ;---------------------------------;
-00E3             96   Timer0_Init:
-00E3 E589        97            mov a, TMOD
-00E5 54F0        98            anl a, #0xf0 ; Clear the bits for timer 0
-00E7 4401        99            orl a, #0x01 ; Configure timer 0 as 16-timer
-00E9 F589       100            mov TMOD, a
-00EB 758CEA     101            mov TH0, #high(TIMER0_RELOAD)
-00EE 758AE8     102            mov TL0, #low(TIMER0_RELOAD)
-00F1            103            ; Enable the timer and interrupts
-00F1 D2A9       104       setb ET0  ; Enable timer 0 interrupt
-00F3 D28C       105       setb TR0  ; Start timer 0
-00F5 D2AF       106       setb EA   ; Enable Global interrupts
-00F7 22         107            ret
-00F8            108   
-00F8            109   ;---------------------------------;
-00F8            110   ; ISR for timer 0.  Set to execute;
-00F8            111   ; every 1/4096Hz to generate a    ;
-00F8            112   ; 2048 Hz square wave at pin P3.7 ;
-00F8            113   ;---------------------------------;
-00F8            114   Timer0_ISR:
-00F8            115            ; Define a latency correction for the timer reload
-00F8            116            CORRECTION EQU (4+4+2+2+4+4) ; lcall+ljmp+clr+mov+mov+setb
-00F8            117            ; In mode 1 we need to reload the timer.
-00F8 C28C       118            clr TR0
-00FA 758CEA     119            mov TH0, #high(TIMER0_RELOAD+CORRECTION)
-00FD 758AFC     120            mov TL0, #low(TIMER0_RELOAD+CORRECTION)
-0100 D28C       121            setb TR0
-0102            122            
-0102            123            ;push acc
-0102            124            ;push psw
-0102            125            
-0102            126            ;************BEEPER************
-0102            127            ; check to see if START_BUTTON is pressed
-0102 200102     128            jb start_reload_flag, beep_transition ; if start_reload_flag is not yet set, skip over
-0105 B2B7       129            cpl P3.7 ; turn on speaker
-0107            130   
-0107            131   beep_transition:
-0107 200602     132            jb state_transition_beep_flag, long_beep_transition
-010A B2B7       133            cpl P3.7 ; turn on speaker
-010C            134   long_beep_transition:
-010C 200702     135            jb long_beep_flag, CHECK_OFF
-010F B2B7       136            cpl P3.7
-0111            137            
-0111            138            ;**************PWM**************
-0111            139            ;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
-0111            140   CHECK_OFF:
-0111 C0E0       141            push acc
-0113 C0D0       142            push psw
-0115            143            
-0115 E535       144            mov a, PWM_FLAG
-0117 B53704     145            cjne a, PWM_OFF, CHECK_LOW
-011A            146            
-011A D280       147            setb PWM_PIN
-011C            148            
-011C 8010       149            sjmp CHECK_COMPLETE
-011E            150   
-011E            151   CHECK_LOW:
-011E E535       152            mov a, PWM_FLAG
-0120 B53809     153            cjne a, PWM_LOW, CHECK_HIGH
-0123            154            
-0123 E536       155            mov a, PWM_COUNTER
-0125 B53806     156            cjne a, PWM_LOW, CHECK_COMPLETE
-0128            157   
-0128 D280       158            setb PWM_PIN
-012A            159            
-012A 8002       160            sjmp CHECK_COMPLETE
-012C            161   
-012C            162   CHECK_HIGH:
-012C C280       163            clr PWM_PIN
-012E            164   
-012E            165   CHECK_COMPLETE:
-012E            166            ;incrementing
-012E E536       167            mov a, PWM_COUNTER
-0130 2401       168            add a, #1
-0132 F536       169            mov PWM_COUNTER, a
-0134            170            
-0134            171            ;checking for end of PWM
-0134 E536       172            mov a, PWM_COUNTER
-0136 B5390B     173            cjne a, PWM_HIGH, FINISH_T0 ;PWM_HIGH is the max counter
-0139            174   
-0139            175   RESET_PWM_COUNTER:
-0139 7400       176            mov a, #0
-013B F536       177            mov PWM_COUNTER, a
-013D            178            
-013D            179            ;only change when PWM is low
-013D E535       180            mov a, PWM_FLAG
-013F B53802     181            cjne a, PWM_LOW, FINISH_T0
-0142 C280       182            clr PWM_PIN                     
-0144            183            
-0144            184   FINISH_T0:
-0144 D0D0       185            pop psw
-0146 D0E0       186            pop acc
-0148 32         187            reti
-0149            188   
-0149            189   ;---------------------------------;
-0149            190   ; Routine to initialize the ISR   ;
-0149            191   ; for timer 2                     ;
-0149            192   ;---------------------------------;
-0149            193   Timer2_Init:
-0149 75C800     194            mov T2CON, #0 ; Stop timer.  Autoreload mode.
-014C            195            ; One millisecond interrupt
-014C 75CBA9     196            mov RCAP2H, #high(TIMER2_RELOAD)
-014F 75CA9A     197            mov RCAP2L, #low(TIMER2_RELOAD)
-0152            198            ; Set the 16-bit variable Count1ms to zero
-0152 E4         199            clr a
-0153 F530       200            mov Count1ms+0, a
-0155 F531       201            mov Count1ms+1, a
-0157            202            ; Enable the timer and interrupts
-0157 D2AD       203       setb ET2  ; Enable timer 2 interrupt
-0159 D2CA       204       setb TR2  ; Enable timer 2
-015B D2AF       205       setb EA   ; Enable Global interrupts
-015D 22         206            ret
-015E            207   
-015E            208   ;---------------------------------;
-015E            209   ; ISR for timer 2                 ;
-015E            210   ;---------------------------------;
-015E            211   Timer2_ISR:
-015E C2CF       212            clr TF2  ; Timer 2 doesn't clear TF2 automatically in ISR
-0160 B2B6       213            cpl P3.6 ; To check the interrupt rate with oscilloscope. It must be a 1 ms pulse.
-0162            214            
-0162            215            ; The two registers used in the ISR must be saved in the stack
-0162 C0E0       216            push acc
-0164 C0D0       217            push psw
-0166            218            
-0166            219            ; Increment the 16-bit counter
-0166 0530       220            inc Count1ms+0    ; Increment the low 8-bits first
-0168 E530       221            mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
-016A 7002       222            jnz Inc_Done
-016C 0531       223            inc Count1ms+1
-016E            224   
-016E            225   Inc_Done:
-016E            226            ; Check if 1 second has passed
-016E E530       227            mov a, Count1ms+0
-0170 B4E870     228            cjne a, #low(1000), Timer2_ISR_done
-0173 E531       229            mov a, Count1ms+1
-0175 B4036B     230            cjne a, #high(1000), Timer2_ISR_done
-0178            231            
-0178            232            ; 1 second has passed.  Set a flag so the main program knows
-0178 D200       233            setb half_seconds_flag ; Let the main program know half second had passed
-017A            234            ;cpl TR1 ; This line makes a beep-silence-beep-silence sound
-017A            235   
-017A            236            ;************COUNTER************
-017A E4         237            clr a
-017B F530       238            mov Count1ms+0, a
-017D F531       239            mov Count1ms+1, a
-017F            240            
-017F E534       241            mov a, TEMP
-0181 2403       242            add a, #0x03
-0183            243            ;da a 
-0183 F534       244            mov TEMP, a
-0185            245            ; Increment the BCD counter
-0185            246            ;mov a, SEC_COUNTER
-0185            247            ;add a, #0x01
-0185            248            ;da a
-0185            249            ;mov SEC_COUNTER, a
-0185            250            
-0185            251            ;************BEEPER************
-0185            252            ; condition to even consider SHORT_BEEP_COUNTER
-0185 20010F     253            jb start_reload_flag, state_transition_beeps ; if start_reload_flag in main is not yet set, skip over
-0188 E53A       254            mov a, SHORT_BEEP_COUNTER
-018A 2401       255            add a, #0x01
-018C D4         256            da a 
-018D F53A       257            mov SHORT_BEEP_COUNTER, a 
-018F B40151     258            cjne a, #0x01, Timer2_ISR_done
-0192 B201       259            cpl start_reload_flag ; clear flag & turn off speaker
-0194 753A00     260            mov SHORT_BEEP_COUNTER, #0x00
-0197            261            
-0197            262            ;****STATE TRANSITION BEEPS****
-0197            263   state_transition_beeps:
-0197 20060F     264            jb state_transition_beep_flag, long_beep
-019A E53A       265            mov a, SHORT_BEEP_COUNTER
-019C 2401       266            add a, #0x01
-019E D4         267            da a 
-019F F53A       268            mov SHORT_BEEP_COUNTER, a 
-01A1 B4013F     269            cjne a, #0x01, Timer2_ISR_done
-01A4 B206       270            cpl state_transition_beep_flag ; clear flag & turn off speaker
-01A6 753A00     271            mov SHORT_BEEP_COUNTER, #0x00
-01A9            272            
-01A9            273            ;********LONG BEEP*********
-01A9            274   long_beep:
-01A9 20070F     275            jb long_beep_flag, check_transition_2_3
-01AC E53A       276            mov a, SHORT_BEEP_COUNTER
-01AE 2401       277            add a, #0x01
-01B0 D4         278            da a
-01B1 F53A       279            mov SHORT_BEEP_COUNTER, a
-01B3 B4032D     280            cjne a, #0x03, Timer2_ISR_done
-01B6 B207       281            cpl long_beep_flag ; clear flag & turn off long beep speaker
-01B8 753A00     282            mov SHORT_BEEP_COUNTER, #0x00
-01BB            283            
-01BB            284            ;****STATE TRANSITIONS*****
-01BB            285   check_transition_2_3:
-01BB            286            ;state 2->3 transition
-01BB 200211     287            jb start_sec_counter_state2_flag, check_transition_4_5 ; if state3_transition_flag in main is not yet set, skip over
-01BE E533       288            mov a, SEC_COUNTER
-01C0 2401       289            add a, #0x01
-01C2 D4         290            da a
-01C3 F533       291            mov SEC_COUNTER, a
-01C5 B4101B     292            cjne a, #0x10, Timer2_ISR_done
-01C8 B204       293            cpl state3_transition_flag ; set state3_transition_flag for main 
-01CA B202       294            cpl start_sec_counter_state2_flag ; clear flag
-01CC 753300     295            mov SEC_COUNTER, #0x00
-01CF            296            
-01CF            297   check_transition_4_5:
-01CF            298            ;state 4->5 transition
-01CF 200311     299            jb start_sec_counter_state4_flag, Timer2_ISR_done ; if state3_transition_flag in main is not yet set, skip over
-01D2 E533       300            mov a, SEC_COUNTER
-01D4 2401       301            add a, #0x01
-01D6 D4         302            da a
-01D7 F533       303            mov SEC_COUNTER, a
-01D9 B41507     304            cjne a, #0x15, Timer2_ISR_done 
-01DC B205       305            cpl state5_transition_flag ; set state5_transition_flag for main
-01DE B203       306            cpl start_sec_counter_state4_flag ; clear flag
-01E0 753300     307            mov SEC_COUNTER, #0x00
-01E3            308            
-01E3            309   Timer2_ISR_done:
-01E3 D0D0       310            pop psw
-01E5 D0E0       311            pop acc
-01E7 32         312            reti
-01E8            313   
-01E8            314   ;---------------------------------;
-01E8            315   ; Main program. Includes hardware ;
-01E8            316   ; initialization and 'forever'    ;
-01E8            317   ; loop.                           ;
-01E8            318   ;---------------------------------;
-01E8            319   main:
-01E8            320            ; Initialization
-01E8 75817F     321            mov SP, #7FH
-01EB 75C100     322            mov PMOD, #0 ; Configure all ports in bidirectional mode
-01EE 1200E3     323       lcall Timer0_Init
-01F1 120149     324            lcall Timer2_Init
-01F4 120088     325            lcall LCD_4BIT
-01F7            326            ; For convenience a few handy macros are included in 'LCD_4bit.inc':
-01F7 C0E0       327            push acc
-01F9 7401       327            mov a, #1
-01FB 14         327            dec a
-01FC 1200C1     327            lcall ?Set_Cursor_1 ; Select column and row
-01FF D0E0       327            pop acc                         
-0201 C083       328            push dph
-0203 C082       328            push dpl
-0205 C0E0       328            push acc
-0207 9000DC     328            mov dptr, #Display_State_Message
-020A 1200B4     328            lcall ?Send_Constant_String
-020D D0E0       328            pop acc
-020F D082       328            pop dpl
-0211 D083       328            pop dph
-0213            329            
-0213 D200       330            setb half_seconds_flag
-0215 753300     331            mov SEC_COUNTER, #0
-0218 753200     332            mov CURRENT_STATE, #0
-021B 753600     333            mov PWM_COUNTER, #0
-021E 853735     334            mov PWM_FLAG, PWM_OFF
-0221 753700     335            mov PWM_OFF, #0
-0224 753801     336            mov PWM_LOW, #1 ;because weird bug (ask kiron)
-0227 75390A     337            mov PWM_HIGH, #10
-022A            338            ;mov SHORT_BEEP, #0
-022A 753A00     339            mov SHORT_BEEP_COUNTER, #0x00
-022D            340            ;mov LONG_BEEP, #0
-022D            341            ;mov LONG_BEEP_COUNTER, #0
-022D 753400     342            mov TEMP, #0
-0230            343   
-0230            344            ; After initialization the program stays in this 'forever' loop
-0230            345   forever:
-0230 20C529     346            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-0233 C002       347            push AR2
-0235 7A32       347            mov R2, #50
-0237 120039     347            lcall ?Wait_Milli_Seconds
-023A D002       347            pop AR2         ; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-023C 20C51D     348            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-023F 30C5FD     349            jnb BOOT_BUTTON, $              ; wait for button release
-0242            350            ; A clean press of the 'BOOT' button has been detected, reset the BCD counter.
-0242            351            ; But first stop the timer and reset the milli-seconds counter, to resync everything.
-0242 C28C       352            clr TR0
-0244 E4         353            clr a
-0245 F530       354            mov Count1ms+0, a
-0247 F531       355            mov Count1ms+1, a
-0249            356            
-0249 753300     357            mov SEC_COUNTER, #0x00
-024C 753200     358            mov CURRENT_STATE, #0x00
-024F 753600     359            mov PWM_COUNTER, #0x00
-0252 853735     360            mov PWM_FLAG, PWM_OFF
-0255            361            ;mov SHORT_BEEP, #0x00
-0255 753A00     362            mov SHORT_BEEP_COUNTER, #0x00
-0258            363            ;mov LONG_BEEP, #0x00
-0258            364            ;mov LONG_BEEP_COUNTER, #0x00
-0258 D28C       365            setb TR0                ; Re-enable the timer
-025A 8003       366            sjmp loop_b             ; Display the new value
-025C            367   loop_a:
-025C 3000D1     368            jnb half_seconds_flag, forever
-025F            369   loop_b:
-025F C200       370       clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
-0261            371            
-0261 E532       372            mov a, CURRENT_STATE
-0263            373   STATE0:
-0263 B40026     374            cjne a, #0x00, STATE1 ; change this back to STATE1
-0266 853735     375            mov PWM_FLAG, PWM_OFF
-0269 C0E0       376            push acc
-026B 7407       376            mov a, #7
-026D 14         376            dec a
-026E 1200C1     376            lcall ?Set_Cursor_1 ; Select column and row
-0271 D0E0       376            pop acc                         
-0273 C000       377            push ar0
-0275 7800       377            mov r0, #0
-0277 1200C6     377            lcall ?Display_BCD
-027A D000       377            pop ar0
-027C B281       378            cpl P0.1 ; to test if state 5->0 transition works correctly
-027E 2082AF     379            jb P0.2, forever
-0281 3082FD     380            jnb P0.2, $ ; Wait for key release
-0284 B201       381            cpl start_reload_flag ; set start_reload_flag.....this beep indicates START = YES & transition to STATE 1
-0286 753201     382            mov CURRENT_STATE, #0x01 ; change this back to #0x01
-0289            383            ;cpl start_sec_counter_state2_flag ; set flag to start incrementing SEC_COUNTER to 60s (WON'T NEED THIS LINE)
-0289            384   STATE0_DONE:
-0289 020230     385            ljmp forever
-028C            386            
-028C            387   STATE1:
-028C B281       388            cpl P0.1
-028E B40127     389            cjne a, #0x01, STATE2
-0291 C0E0       390            push acc
-0293 7407       390            mov a, #7
-0295 14         390            dec a
-0296 1200C1     390            lcall ?Set_Cursor_1 ; Select column and row
-0299 D0E0       390            pop acc                         
-029B C000       391            push ar0
-029D 7801       391            mov r0, #1
-029F 1200C6     391            lcall ?Display_BCD
-02A2 D000       391            pop ar0
-02A4 853935     392            mov PWM_FLAG, PWM_HIGH
-02A7            393            ;mov SEC_COUNTER, #0x00
-02A7 7496       394            mov a, #150
-02A9            395            ;mov TEMP, #160
-02A9 C3         396            clr c
-02AA 9534       397            subb a, TEMP
-02AC 5007       398            jnc STATE1_DONE
-02AE 753202     399            mov CURRENT_STATE, #0x02
-02B1 B206       400            cpl state_transition_beep_flag ; short beep to indicate change of state
-02B3 B202       401            cpl start_sec_counter_state2_flag ; set flag to start incrementing SEC_COUNTER to 60s
-02B5            402   STATE1_DONE:
-02B5 020230     403            ljmp forever
-02B8            404            
-02B8            405   STATE2:
-02B8 B40223     406            cjne a, #0x02, STATE3 ; change this back to STATE3
-02BB C0E0       407            push acc
-02BD 7407       407            mov a, #7
-02BF 14         407            dec a
-02C0 1200C1     407            lcall ?Set_Cursor_1 ; Select column and row
-02C3 D0E0       407            pop acc                         
-02C5 C000       408            push ar0
-02C7 7802       408            mov r0, #2
-02C9 1200C6     408            lcall ?Display_BCD
-02CC D000       408            pop ar0
-02CE            409            ;cpl P0.1
-02CE 853835     410            mov PWM_FLAG, PWM_LOW
-02D1 200407     411            jb state3_transition_flag, STATE2_DONE ; if state3_transition_flag is not yet set, skip over
-02D4 B281       412            cpl P0.1; to test correct change of state
-02D6            413            ;mov PWM_FLAG, PWM_LOW
-02D6 753203     414            mov CURRENT_STATE, #0x03 ; change this back to #0x03
-02D9 B206       415            cpl state_transition_beep_flag ; short beep flag to indicate change of state
-02DB            416            ;cpl start_sec_counter_state4_flag ; set flag to start incrementing SEC_COUNTER to 45s (WON'T NEED THIS LINE)
-02DB            417   STATE2_DONE:
-02DB 020230     418            ljmp forever
-02DE            419            
-02DE            420   STATE3:
-02DE B281       421            cpl P0.1 ; this is to test change of state
-02E0 B40327     422            cjne a, #0x03, STATE4
-02E3 C0E0       423            push acc
-02E5 7407       423            mov a, #7
-02E7 14         423            dec a
-02E8 1200C1     423            lcall ?Set_Cursor_1 ; Select column and row
-02EB D0E0       423            pop acc                         
-02ED C000       424            push ar0
-02EF 7803       424            mov r0, #3
-02F1 1200C6     424            lcall ?Display_BCD
-02F4 D000       424            pop ar0
-02F6 853935     425            mov PWM_FLAG, PWM_HIGH
-02F9            426            ;mov SEC_COUNTER, #0x00
-02F9 74DC       427            mov a, #220
-02FB            428            ;mov TEMP, #225
-02FB C3         429            clr c
-02FC 9534       430            subb a, TEMP
-02FE 5007       431            jnc STATE3_DONE
-0300 753204     432            mov CURRENT_STATE, #0x04
-0303 B203       433            cpl start_sec_counter_state4_flag ; set flag to start incrementing SEC_COUNTER to 45s
-0305 B206       434            cpl state_transition_beep_flag ; set flag to short beep to indicate change of state
-0307            435   STATE3_DONE:
-0307 020230     436            ljmp forever
-030A            437            
-030A            438   STATE4:
-030A B40423     439            cjne a, #0x04, STATE5
-030D C0E0       440            push acc
-030F 7407       440            mov a, #7
-0311 14         440            dec a
-0312 1200C1     440            lcall ?Set_Cursor_1 ; Select column and row
-0315 D0E0       440            pop acc                         
-0317 C000       441            push ar0
-0319 7804       441            mov r0, #4
-031B 1200C6     441            lcall ?Display_BCD
-031E D000       441            pop ar0
-0320 B287       442            cpl P0.7
-0322 853835     443            mov PWM_FLAG, PWM_LOW
-0325 200505     444            jb state5_transition_flag, STATE4_DONE ; if state5_transition_flag is not yet set, skip over
-0328            445            ;cpl P0.7 ; to test the transition from STATE2 to STATE4
-0328            446            ;mov PWM_FLAG, PWM_LOW
-0328 753205     447            mov CURRENT_STATE, #0x05
-032B B206       448            cpl state_transition_beep_flag ;  set flag to short beep to indicate change of state
-032D            449   STATE4_DONE:
-032D 020230     450            ljmp forever
-0330            451            
-0330            452   STATE5:
-0330 B287       453            cpl P0.7
-0332 B40523     454            cjne a, #0x05, STATE5_DONE
-0335 C0E0       455            push acc
-0337 7407       455            mov a, #7
-0339 14         455            dec a
-033A 1200C1     455            lcall ?Set_Cursor_1 ; Select column and row
-033D D0E0       455            pop acc                         
-033F C000       456            push ar0
-0341 7805       456            mov r0, #5
-0343 1200C6     456            lcall ?Display_BCD
-0346 D000       456            pop ar0
-0348            457            ;mov CURRENT_STATE, #0x00 ; to test change of state from 5->0
-0348            458            ;cpl long_beep_flag ; to test to see if long beep feedback works correctly
-0348            459            ;ljmp STATE5_DONE ; to test (WON'T NEED THIS LINE)
-0348 853735     460            mov PWM_FLAG, PWM_OFF
-034B E534       461            mov a, TEMP
-034D 7960       462            mov R1, #0x60
-034F C3         463            clr c
-0350 99         464            subb a, R1
-0351 5005       465            jnc STATE5_DONE
-0353 753200     466            mov CURRENT_STATE, #0x00
-0356 B207       467            cpl long_beep_flag
-0358            468   STATE5_DONE:
-0358 020230     469            ljmp forever
-=======
 0001             67   
 002E             68   cseg
 002E             69   ; These 'equ' must match the wiring between the microcontroller and the LCD!
@@ -582,293 +109,266 @@
 00FB C0E0       113            push acc
 00FD C0D0       114            push psw
 00FF            115            
-00FF            116            ;************BEEPER************
+00FF            116   
 00FF            117            
-00FF            118   CHECK_SHORT_BEEP:
-00FF E53A       119            mov a, SHORT_BEEP
-0101 B40105     120            cjne a, #0x01, CHECK_LONG_BEEP
-0104            121            ;SHORT BEEP ON
-0104            122            
-0104 B2B7       123            cpl SOUND_OUT   
-0106            124   
-0106 02010E     125            ljmp CHECK_OFF
-0109            126   CHECK_LONG_BEEP:
-0109 E53C       127            mov a, LONG_BEEP
-010B B40100     128            cjne a, #0x01, CHECK_OFF
-010E            129            ;LONG BEEP ON
-010E            130   
-010E            131            ;**************PWM**************
-010E            132   
-010E            133   CHECK_OFF:
-010E E535       134            mov a, PWM_FLAG
-0110 B53704     135            cjne a, PWM_OFF, CHECK_LOW
-0113            136            
-0113 D281       137            setb PWM_PIN
-0115            138            
-0115 8010       139            sjmp CHECK_COMPLETE
-0117            140   
-0117            141   CHECK_LOW:
-0117 E535       142            mov a, PWM_FLAG
-0119 B53809     143            cjne a, PWM_LOW, CHECK_HIGH
-011C            144            
-011C E536       145            mov a, PWM_COUNTER
-011E B53806     146            cjne a, PWM_LOW, CHECK_COMPLETE
-0121            147   
-0121 D281       148            setb PWM_PIN
-0123            149            
-0123 8002       150            sjmp CHECK_COMPLETE
-0125            151   
-0125            152   CHECK_HIGH:
-0125 C281       153            clr PWM_PIN
-0127            154   
-0127            155   CHECK_COMPLETE:
-0127            156            ;incrementing
-0127 E536       157            mov a, PWM_COUNTER
-0129 2401       158            add a, #1
-012B F536       159            mov PWM_COUNTER, a
-012D            160   
-012D            161            ;checking for end of PWM
-012D E536       162            mov a, PWM_COUNTER
-012F B5390B     163            cjne a, PWM_HIGH, FINISH_T0 ;PWM_HIGH is the max counter
-0132            164   
-0132            165   RESET_PWM_COUNTER:
-0132 7400       166            mov a, #0
-0134 F536       167            mov PWM_COUNTER, a
-0136            168            
-0136            169            ;only change when PWM is low
-0136 E535       170            mov a, PWM_FLAG
-0138 B53802     171            cjne a, PWM_LOW, FINISH_T0
-013B C281       172            clr PWM_PIN                     
-013D            173            
-013D            174   FINISH_T0:
-013D            175   
-013D D0D0       176            pop psw
-013F D0E0       177            pop acc
-0141            178            
-0141 32         179            reti
-0142            180   
-0142            181   Timer2_Init:
-0142 75C800     182            mov T2CON, #0 ; Stop timer.  Autoreload mode.
-0145            183            ; One millisecond interrupt
-0145 75CB53     184            mov RCAP2H, #high(TIMER2_RELOAD)
-0148 75CA34     185            mov RCAP2L, #low(TIMER2_RELOAD)
-014B            186            ; Set the 16-bit variable Count1ms to zero
-014B E4         187            clr a
-014C F530       188            mov Count1ms+0, a
-014E F531       189            mov Count1ms+1, a
-0150            190            ; Enable the timer and interrupts
-0150 D2AD       191       setb ET2  ; Enable timer 2 interrupt
-0152 D2CA       192       setb TR2  ; Enable timer 2
-0154 D2AF       193       setb EA   ; Enable Global interrupts
-0156 22         194            ret
-0157            195   
-0157            196   ;---------------------------------;
-0157            197   ; ISR for timer 2                 ;
-0157            198   ;---------------------------------;
-0157            199   Timer2_ISR:
-0157 C2CF       200            clr TF2  ; Timer 2 doesn't clear TF2 automatically in ISR
-0159            201            ;cpl P3.6 ; To check the interrupt rate with oscilloscope. It must be a 1 ms pulse.
-0159            202            
-0159            203            ; The two registers used in the ISR must be saved in the stack
-0159 C0E0       204            push acc
-015B C0D0       205            push psw
-015D            206            
-015D            207            ; Increment the 16-bit counter
-015D 0530       208            inc Count1ms+0    ; Increment the low 8-bits first
-015F E530       209            mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
-0161 7002       210            jnz Inc_Done
-0163 0531       211            inc Count1ms+1
-0165            212   
-0165            213   Inc_Done:
-0165            214            ; Check if half second has passed
-0165 E530       215            mov a, Count1ms+0
-0167 B4F42E     216            cjne a, #low(500), Timer2_ISR_done
-016A E531       217            mov a, Count1ms+1
-016C B40129     218            cjne a, #high(500), Timer2_ISR_done
-016F            219            
-016F            220            ; 500 milliseconds have passed.  Set a flag so the main program knows
-016F D200       221            setb half_seconds_flag ; Let the main program know half second had passed
-0171            222            ;cpl TR1 ; This line makes a beep-silence-beep-silence sound
-0171            223   
-0171            224            ;************BEEPER************
-0171            225   
-0171 E53A       226            mov a, SHORT_BEEP
-0173 B40111     227            cjne a, #0x01, CHECK_LONG_BEEP_2
-0176            228   
-0176            229            ;SHORT BEEP ON, increment counter
-0176            230   
-0176 E53B       231            mov a, SHORT_BEEP_COUNTER
-0178 2401       232            add a, #0x01
-017A F53B       233            mov SHORT_BEEP_COUNTER, a
-017C            234   
-017C B4020D     235            cjne a, #0x02, FINISH_BEEPER 
-017F            236   
-017F            237            ;STOP SHORT BEEP
-017F 7400       238            mov a, #0x00
-0181 F53A       239            mov SHORT_BEEP, a
-0183 F53B       240            mov SHORT_BEEP_COUNTER, a
-0185 C2B7       241            clr SOUND_OUT
-0187            242   
-0187            243   CHECK_LONG_BEEP_2:
-0187 E53C       244            mov a, LONG_BEEP
-0189 B40100     245            cjne a, #0x01, FINISH_BEEPER
-018C            246            ;LONG BEEP ON
-018C            247   FINISH_BEEPER:
-018C            248            ; Reset the milli-seconds counter, it is a 16-bit variable
-018C            249   
-018C            250            ;************COUNTER************
-018C            251   
-018C E4         252            clr a
-018D F530       253            mov Count1ms+0, a
-018F F531       254            mov Count1ms+1, a
-0191            255            ; Increment the BCD counter
-0191 E533       256            mov a, SEC
-0193 2401       257            add a, #0x01
-0195 D4         258            da a
-0196 F533       259            mov SEC, a
-0198            260            
-0198            261   Timer2_ISR_done:
-0198 D0D0       262            pop psw
-019A D0E0       263            pop acc
-019C 32         264            reti
-019D            265   
-019D            266   ;---------------------------------;
-019D            267   ; Main program. Includes hardware ;
-019D            268   ; initialization and 'forever'    ;
-019D            269   ; loop.                           ;
-019D            270   ;---------------------------------;
-019D            271   main:
-019D            272            ; Initialization
-019D 75817F     273            mov SP, #7FH
-01A0 75C100     274            mov PMOD, #0 ; Configure all ports in bidirectional mode
-01A3 1200DC     275       lcall Timer0_Init
-01A6 120142     276            lcall Timer2_Init
-01A9 120088     277            lcall LCD_4BIT
-01AC            278            ; For convenience a few handy macros are included in 'LCD_4bit.inc':
-01AC D200       279            setb half_seconds_flag
-01AE 753300     280            mov SEC, #0
-01B1 753200     281            mov CURRENT_STATE, #0
-01B4 753600     282            mov PWM_COUNTER, #0
-01B7 853735     283            mov PWM_FLAG, PWM_OFF
-01BA 753700     284            mov PWM_OFF, #0
-01BD 753801     285            mov PWM_LOW, #1 ;because weird bug (ask kiron)
-01C0 75390A     286            mov PWM_HIGH, #10
-01C3 753A00     287            mov SHORT_BEEP, #0
-01C6 753B00     288            mov SHORT_BEEP_COUNTER, #0
-01C9 753C00     289            mov LONG_BEEP, #0
-01CC 753D00     290            mov LONG_BEEP_COUNTER, #0
-01CF            291   
-01CF            292            ; After initialization the program stays in this 'forever' loop
-01CF            293   
-01CF            294   forever:
-01CF 20C532     295            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-01D2 C002       296            push AR2
-01D4 7A32       296            mov R2, #50
-01D6 120039     296            lcall ?Wait_Milli_Seconds
-01D9 D002       296            pop AR2         ; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-01DB 20C526     297            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-01DE 30C5FD     298            jnb BOOT_BUTTON, $              ; wait for button release
-01E1            299            ; A clean press of the 'BOOT' button has been detected, reset the BCD counter.
-01E1            300            ; But first stop the timer and reset the milli-seconds counter, to resync everything.
-01E1 C28C       301            clr TR0
-01E3 E4         302            clr a
-01E4 F530       303            mov Count1ms+0, a
-01E6 F531       304            mov Count1ms+1, a
-01E8            305   
-01E8 753300     306            mov SEC, #0x00
-01EB 753200     307            mov CURRENT_STATE, #0
-01EE 753600     308            mov PWM_COUNTER, #0
-01F1 853735     309            mov PWM_FLAG, PWM_OFF
-01F4 753A00     310            mov SHORT_BEEP, #0x00
-01F7 753B00     311            mov SHORT_BEEP_COUNTER, #0
-01FA 753C00     312            mov LONG_BEEP, #0
-01FD 753D00     313            mov LONG_BEEP_COUNTER, #0
-0200            314   
-0200 D28C       315            setb TR0                ; Re-enable the timer
-0202 8003       316            sjmp loop_b             ; Display the new value
-0204            317   loop_a:
-0204 3000C8     318            jnb half_seconds_flag, forever
-0207            319   loop_b:
-0207 C200       320       clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
-0209            321   
-0209 E532       322            mov a, CURRENT_STATE
-020B            323   STATE0:
-020B B4001E     324            cjne a, #0, STATE1
-020E            325   
-020E 853735     326            mov PWM_FLAG, PWM_OFF
-0211            327   
-0211 208315     328            jb START_BUTTON, STATE0_DONE
-0214 C002       329            push AR2
-0216 7A32       329            mov R2, #50
-0218 120039     329            lcall ?Wait_Milli_Seconds
-021B D002       329            pop AR2; debounce time
-021D 208309     330            jb START_BUTTON, STATE0_DONE
-0220 3083FD     331            jnb START_BUTTON, $ ; Wait for key release
-0223 753201     332            mov CURRENT_STATE, #0x01
-0226 753A01     333            mov SHORT_BEEP, #0x01
-0229            334   STATE0_DONE:
-0229 0201CF     335            ljmp forever
-022C            336   STATE1:
-022C B40113     337            cjne a, #1, STATE2
-022F            338   
-022F 853935     339            mov PWM_FLAG, PWM_HIGH
-0232            340   
-0232 753300     341            mov SEC, #0
-0235 7496       342            mov a, #150
-0237 C3         343            clr c
-0238 9534       344            subb a, TEMP
-023A 5003       345            jnc STATE1_DONE
-023C 753202     346            mov CURRENT_STATE, #2
-023F            347   STATE1_DONE:
-023F 0201CF     348            ljmp forever
-0242            349   STATE2:
-0242 B40210     350            cjne a, #2, STATE3
-0245            351   
-0245 853835     352            mov PWM_FLAG, PWM_LOW
-0248            353   
-0248 743C       354            mov a, #60
-024A C3         355            clr c
-024B 9533       356            subb a, SEC
-024D 5003       357            jnc STATE2_DONE
-024F 753203     358            mov CURRENT_STATE, #3
-0252            359   STATE2_DONE:
-0252 0201CF     360            ljmp forever
-0255            361   STATE3:
-0255 B40313     362            cjne a, #3, STATE4
-0258            363   
-0258 853935     364            mov PWM_FLAG, PWM_HIGH
-025B            365   
-025B 753300     366            mov SEC, #0
-025E 74DC       367            mov a, #220
-0260 C3         368            clr c
-0261 9534       369            subb a, TEMP
-0263 5003       370            jnc STATE3_DONE
-0265 753204     371            mov CURRENT_STATE, #4
-0268            372   STATE3_DONE:
-0268 0201CF     373            ljmp forever
-026B            374   STATE4:
-026B B40410     375            cjne a, #4, STATE5
-026E            376   
-026E 853835     377            mov PWM_FLAG, PWM_LOW
-0271            378   
-0271 742D       379            mov a, #45
-0273 C3         380            clr c
-0274 9533       381            subb a, SEC
-0276 5003       382            jnc STATE4_DONE
-0278 753205     383            mov CURRENT_STATE, #5
-027B            384   STATE4_DONE:
-027B 0201CF     385            ljmp forever
-027E            386   STATE5:
-027E B40510     387            cjne a, #5, STATE5_DONE
-0281            388   
-0281 853735     389            mov PWM_FLAG, PWM_OFF
-0284            390   
-0284 753300     391            mov SEC, #0
-0287 743C       392            mov a, #60
-0289 C3         393            clr c
-028A 9534       394            subb a, TEMP
-028C 5003       395            jnc STATE5_DONE
-028E 753200     396            mov CURRENT_STATE, #0
-0291            397   STATE5_DONE:
-0291 0201CF     398            ljmp forever
->>>>>>> origin/master
+00FF            118   
+00FF            119            ;**************PWM**************
+00FF            120            
+00FF            121            ;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
+00FF            122   
+00FF            123   CHECK_OFF:
+00FF E535       124            mov a, PWM_FLAG
+0101 B53705     125            cjne a, PWM_OFF, CHECK_LOW
+0104            126            ;PWM IS OFF
+0104 C280       127            clr PWM_PIN
+0106 02011B     128            ljmp FINISH_PWM_FLAG_CHECK
+0109            129   CHECK_LOW:
+0109 B5380A     130            cjne a, PWM_LOW, CHECK_HIGH
+010C            131            ;PWM IS LOW
+010C E536       132            mov a, PWM_COUNTER
+010E B5380A     133            cjne a, PWM_LOW, FINISH_PWM_FLAG_CHECK
+0111            134            ;PWM_COUNTER = PWM_LOW
+0111 C280       135            clr PWM_PIN
+0113 02011B     136            ljmp FINISH_PWM_FLAG_CHECK
+0116            137   CHECK_HIGH:
+0116            138            ;PWM IS HIGH
+0116 E536       139            mov a, PWM_COUNTER
+0118 B53900     140            cjne a, PWM_HIGH, FINISH_PWM_FLAG_CHECK
+011B            141            ;PWM_COUNTER = PWM_HIGH
+011B            142            ;clr PWM_PIN    
+011B            143   
+011B            144   FINISH_PWM_FLAG_CHECK: 
+011B E536       145            mov a, PWM_COUNTER
+011D 2401       146            add a, #0x01
+011F D4         147            da a
+0120 F536       148            mov PWM_COUNTER, a
+0122            149   
+0122 B46405     150            cjne a, #100, FINISH_PWM
+0125            151            ;PIN_COUNTER has reached 100
+0125 D280       152            setb PWM_PIN    
+0127            153   
+0127 753600     154            mov PWM_COUNTER, #0 ;reset the counter          
+012A            155   
+012A            156   FINISH_PWM:
+012A D0D0       157            pop psw
+012C D0E0       158            pop acc
+012E            159            
+012E B2B7       160            cpl SOUND_OUT ; Connect speaker to P3.7!
+0130 32         161            reti
+0131            162   
+0131            163   Timer2_Init:
+0131 75C800     164            mov T2CON, #0 ; Stop timer.  Autoreload mode.
+0134            165            ; One millisecond interrupt
+0134 75CB53     166            mov RCAP2H, #high(TIMER2_RELOAD)
+0137 75CA34     167            mov RCAP2L, #low(TIMER2_RELOAD)
+013A            168            ; Set the 16-bit variable Count1ms to zero
+013A E4         169            clr a
+013B F530       170            mov Count1ms+0, a
+013D F531       171            mov Count1ms+1, a
+013F            172            ; Enable the timer and interrupts
+013F D2AD       173       setb ET2  ; Enable timer 2 interrupt
+0141 D2CA       174       setb TR2  ; Enable timer 2
+0143 D2AF       175       setb EA   ; Enable Global interrupts
+0145 22         176            ret
+0146            177   
+0146            178   ;---------------------------------;
+0146            179   ; ISR for timer 2                 ;
+0146            180   ;---------------------------------;
+0146            181   Timer2_ISR:
+0146 C2CF       182            clr TF2  ; Timer 2 doesn't clear TF2 automatically in ISR
+0148            183            ;cpl P3.6 ; To check the interrupt rate with oscilloscope. It must be a 1 ms pulse.
+0148            184            
+0148            185            ; The two registers used in the ISR must be saved in the stack
+0148 C0E0       186            push acc
+014A C0D0       187            push psw
+014C            188            
+014C            189            ; Increment the 16-bit counter
+014C 0530       190            inc Count1ms+0    ; Increment the low 8-bits first
+014E E530       191            mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
+0150 7002       192            jnz Inc_Done
+0152 0531       193            inc Count1ms+1
+0154            194   
+0154            195   Inc_Done:
+0154            196            ; Check if half second has passed
+0154 E530       197            mov a, Count1ms+0
+0156 B4F432     198            cjne a, #low(500), Timer2_ISR_done
+0159 E531       199            mov a, Count1ms+1
+015B B4012D     200            cjne a, #high(500), Timer2_ISR_done
+015E            201            
+015E            202            ; 500 milliseconds have passed.  Set a flag so the main program knows
+015E D200       203            setb half_seconds_flag ; Let the main program know half second had passed
+0160 B28E       204            cpl TR1 ; This line makes a beep-silence-beep-silence sound
+0162            205   
+0162            206            ;************BEEPER************
+0162            207   
+0162 E53A       208            mov a, SHORT_BEEP
+0164 B40113     209            cjne a, #0x01, CHECK_LONG_BEEP
+0167            210   
+0167            211            ;SHORT BEEP ON, increment counter
+0167            212   
+0167 D2B7       213            setb SOUND_OUT
+0169            214   
+0169 E53B       215            mov a, SHORT_BEEP_COUNTER
+016B 2401       216            add a, #0x01
+016D F53B       217            mov SHORT_BEEP_COUNTER, a
+016F            218   
+016F B4030D     219            cjne a, #0x03, FINISH_BEEPER 
+0172            220   
+0172            221            ;STOP SHORT BEEP
+0172 7400       222            mov a, #0x00
+0174 F53A       223            mov SHORT_BEEP, a
+0176 F53B       224            mov SHORT_BEEP_COUNTER, a
+0178 C2B7       225            clr SOUND_OUT
+017A            226   
+017A            227            ; DO THIS WITH COMPLEMENT       
+017A            228   
+017A            229   CHECK_LONG_BEEP:
+017A E53C       230            mov a, LONG_BEEP
+017C B40180     231            cjne a, #0x01, CHECK_OFF
+017F            232            ;LONG BEEP ON
+017F            233   FINISH_BEEPER:
+017F            234            ; Reset the milli-seconds counter, it is a 16-bit variable
+017F            235   
+017F            236            ;************COUNTER************
+017F            237   
+017F E4         238            clr a
+0180 F530       239            mov Count1ms+0, a
+0182 F531       240            mov Count1ms+1, a
+0184            241            ; Increment the BCD counter
+0184 E533       242            mov a, SEC
+0186 2401       243            add a, #0x01
+0188 D4         244            da a
+0189 F533       245            mov SEC, a
+018B            246            
+018B            247   Timer2_ISR_done:
+018B D0D0       248            pop psw
+018D D0E0       249            pop acc
+018F 32         250            reti
+0190            251   
+0190            252   ;---------------------------------;
+0190            253   ; Main program. Includes hardware ;
+0190            254   ; initialization and 'forever'    ;
+0190            255   ; loop.                           ;
+0190            256   ;---------------------------------;
+0190            257   main:
+0190            258            ; Initialization
+0190 75817F     259            mov SP, #7FH
+0193 75C100     260            mov PMOD, #0 ; Configure all ports in bidirectional mode
+0196 1200DC     261       lcall Timer0_Init
+0199 120131     262            lcall Timer2_Init
+019C 120088     263            lcall LCD_4BIT
+019F            264            ; For convenience a few handy macros are included in 'LCD_4bit.inc':
+019F D200       265            setb half_seconds_flag
+01A1 753300     266            mov SEC, #0x00
+01A4 753200     267            mov CURRENT_STATE, #0
+01A7 753600     268            mov PWM_COUNTER, #0
+01AA 853735     269            mov PWM_FLAG, PWM_OFF
+01AD 753700     270            mov PWM_OFF, #0
+01B0 753814     271            mov PWM_LOW, #20
+01B3 753964     272            mov PWM_HIGH, #100
+01B6 753A01     273            mov SHORT_BEEP, #0x01
+01B9 753B00     274            mov SHORT_BEEP_COUNTER, #0
+01BC 753C00     275            mov LONG_BEEP, #0
+01BF 753D00     276            mov LONG_BEEP_COUNTER, #0
+01C2            277   
+01C2            278            ; After initialization the program stays in this 'forever' loop
+01C2            279   
+01C2            280   forever:
+01C2 20C532     281            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
+01C5 C002       282            push AR2
+01C7 7A32       282            mov R2, #50
+01C9 120039     282            lcall ?Wait_Milli_Seconds
+01CC D002       282            pop AR2         ; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+01CE 20C526     283            jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
+01D1 30C5FD     284            jnb BOOT_BUTTON, $              ; wait for button release
+01D4            285            ; A clean press of the 'BOOT' button has been detected, reset the BCD counter.
+01D4            286            ; But first stop the timer and reset the milli-seconds counter, to resync everything.
+01D4 C28C       287            clr TR0
+01D6 E4         288            clr a
+01D7 F530       289            mov Count1ms+0, a
+01D9 F531       290            mov Count1ms+1, a
+01DB            291   
+01DB 753300     292            mov SEC, #0x00
+01DE 753200     293            mov CURRENT_STATE, #0
+01E1 753600     294            mov PWM_COUNTER, #0
+01E4 853735     295            mov PWM_FLAG, PWM_OFF
+01E7 753A00     296            mov SHORT_BEEP, #0x00
+01EA 753B00     297            mov SHORT_BEEP_COUNTER, #0
+01ED 753C00     298            mov LONG_BEEP, #0
+01F0 753D00     299            mov LONG_BEEP_COUNTER, #0
+01F3            300   
+01F3 D28C       301            setb TR0                ; Re-enable the timer
+01F5 8003       302            sjmp loop_b             ; Display the new value
+01F7            303   loop_a:
+01F7 3000C8     304            jnb half_seconds_flag, forever
+01FA            305   loop_b:
+01FA C200       306       clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
+01FC            307   
+01FC E532       308            mov a, CURRENT_STATE
+01FE            309   STATE0:
+01FE B4001B     310            cjne a, #0, STATE1
+0201 853735     311            mov PWM_FLAG, PWM_OFF
+0204 208312     312            jb START_BUTTON, STATE0_DONE
+0207 C002       313            push AR2
+0209 7A32       313            mov R2, #50
+020B 120039     313            lcall ?Wait_Milli_Seconds
+020E D002       313            pop AR2; debounce time
+0210 208306     314            jb START_BUTTON, STATE0_DONE
+0213 3083FD     315            jnb START_BUTTON, $ ; Wait for key release
+0216 753201     316            mov CURRENT_STATE, #1
+0219            317   STATE0_DONE:
+0219 0201C2     318            ljmp forever
+021C            319   STATE1:
+021C B40113     320            cjne a, #1, STATE2
+021F            321                    
+021F 853935     322            mov PWM_FLAG, PWM_HIGH
+0222 753300     323            mov SEC, #0
+0225 7496       324            mov a, #150
+0227 C3         325            clr c
+0228 9534       326            subb a, TEMP
+022A 5003       327            jnc STATE1_DONE
+022C 753202     328            mov CURRENT_STATE, #2
+022F            329   STATE1_DONE:
+022F 0201C2     330            ljmp forever
+0232            331   STATE2:
+0232 B40210     332            cjne a, #2, STATE3
+0235 853835     333            mov PWM_FLAG, PWM_LOW
+0238 743C       334            mov a, #60
+023A C3         335            clr c
+023B 9533       336            subb a, SEC
+023D 5003       337            jnc STATE2_DONE
+023F 753203     338            mov CURRENT_STATE, #3
+0242            339   STATE2_DONE:
+0242 0201C2     340            ljmp forever
+0245            341   STATE3:
+0245 B40313     342            cjne a, #3, STATE4
+0248 853935     343            mov PWM_FLAG, PWM_HIGH
+024B 753300     344            mov SEC, #0
+024E 74DC       345            mov a, #220
+0250 C3         346            clr c
+0251 9534       347            subb a, TEMP
+0253 5003       348            jnc STATE3_DONE
+0255 753204     349            mov CURRENT_STATE, #4
+0258            350   STATE3_DONE:
+0258 0201C2     351            ljmp forever
+025B            352   STATE4:
+025B B40410     353            cjne a, #4, STATE5
+025E 853835     354            mov PWM_FLAG, PWM_LOW
+0261 742D       355            mov a, #45
+0263 C3         356            clr c
+0264 9533       357            subb a, SEC
+0266 5003       358            jnc STATE4_DONE
+0268 753205     359            mov CURRENT_STATE, #5
+026B            360   STATE4_DONE:
+026B 0201C2     361            ljmp forever
+026E            362   STATE5:
+026E B40510     363            cjne a, #5, STATE5_DONE
+0271 853735     364            mov PWM_FLAG, PWM_OFF
+0274 753300     365            mov SEC, #0
+0277 743C       366            mov a, #60
+0279 C3         367            clr c
+027A 9534       368            subb a, TEMP
+027C 5003       369            jnc STATE5_DONE
+027E 753200     370            mov CURRENT_STATE, #0
+0281            371   STATE5_DONE:
+0281 0201C2     372            ljmp forever

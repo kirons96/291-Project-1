@@ -10,7 +10,7 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON     EQU P4.5 ;reset button
 SOUND_OUT       EQU P3.7
-PWM_PIN			EQU P0.1 ;change later
+PWM_PIN			EQU P0.0 ;change later
 START_BUTTON 	EQU P0.3 ;start button
 
 ; Reset vector
@@ -113,34 +113,18 @@ Timer0_ISR:
 	push acc
 	push psw
 	
-;************BEEPER************
-	
-CHECK_SHORT_BEEP:
-	mov a, SHORT_BEEP
-	cjne a, #0x01, CHECK_LONG_BEEP
-	;SHORT BEEP ON
-	
-	cpl SOUND_OUT	
 
-	ljmp CHECK_OFF
-CHECK_LONG_BEEP:
-	mov a, LONG_BEEP
-	cjne a, #0x01, CHECK_OFF
-	;LONG BEEP ON
+	
 
 	;**************PWM**************
 	
-	;CODED IN ACTIVE LOW
+	;CHANGE THE CODE: CLR THE PIN BELOW, SET IT ON ABOVE AT 0
 
 CHECK_OFF:
 	mov a, PWM_FLAG
 	cjne a, PWM_OFF, CHECK_LOW
 	;PWM IS OFF
-	
-	;subb a, TEMP
-	;jnc STATE1_DONE
-	setb PWM_PIN
-
+	clr PWM_PIN
 	ljmp FINISH_PWM_FLAG_CHECK
 CHECK_LOW:
 	cjne a, PWM_LOW, CHECK_HIGH
@@ -148,17 +132,14 @@ CHECK_LOW:
 	mov a, PWM_COUNTER
 	cjne a, PWM_LOW, FINISH_PWM_FLAG_CHECK
 	;PWM_COUNTER = PWM_LOW
-
-	setb PWM_PIN
-
+	clr PWM_PIN
 	ljmp FINISH_PWM_FLAG_CHECK
 CHECK_HIGH:
 	;PWM IS HIGH
 	mov a, PWM_COUNTER
 	cjne a, PWM_HIGH, FINISH_PWM_FLAG_CHECK
 	;PWM_COUNTER = PWM_HIGH
-	
-	clr PWM_PIN
+	;clr PWM_PIN	
 
 FINISH_PWM_FLAG_CHECK: 
 	mov a, PWM_COUNTER
@@ -167,28 +148,16 @@ FINISH_PWM_FLAG_CHECK:
 	mov PWM_COUNTER, a
 
 	cjne a, #100, FINISH_PWM
-	;PWM_COUNTER has reached 100
-	
-	;check if PWM is off (so don't clr pin)
+	;PIN_COUNTER has reached 100
+	setb PWM_PIN	
 
-	mov a, PWM_FLAG
-	cjne a, PWM_OFF, CLR_PWM
-	
-	;PWM OFF
-	sjmp RESET_PWM_COUNTER 
-
-CLR_PWM:
-	clr PWM_PIN	
-
-RESET_PWM_COUNTER:
-	mov a, #0
-	mov PWM_COUNTER, a ;reset the counter 	
+	mov PWM_COUNTER, #0 ;reset the counter 	
 
 FINISH_PWM:
-
 	pop psw
 	pop acc
 	
+	cpl SOUND_OUT ; Connect speaker to P3.7!
 	reti
 
 Timer2_Init:
@@ -232,20 +201,22 @@ Inc_Done:
 	
 	; 500 milliseconds have passed.  Set a flag so the main program knows
 	setb half_seconds_flag ; Let the main program know half second had passed
-	;cpl TR1 ; This line makes a beep-silence-beep-silence sound
+	cpl TR1 ; This line makes a beep-silence-beep-silence sound
 
 	;************BEEPER************
 
 	mov a, SHORT_BEEP
-	cjne a, #0x01, CHECK_LONG_BEEP_2
+	cjne a, #0x01, CHECK_LONG_BEEP
 
 	;SHORT BEEP ON, increment counter
 
-	mov a, SHORT_BEEP_COUNTER
+	setb SOUND_OUT
+
+	mov a, SHORT_BEEP COUNTER
 	add a, #0x01
 	mov SHORT_BEEP_COUNTER, a
 
-	cjne a, #0x02, FINISH_BEEPER 
+	cjne a, #0x03, FINISH_BEEPER 
 
 	;STOP SHORT BEEP
 	mov a, #0x00
@@ -253,9 +224,11 @@ Inc_Done:
 	mov SHORT_BEEP_COUNTER, a
 	clr SOUND_OUT
 
-CHECK_LONG_BEEP_2:
+	; DO THIS WITH COMPLEMENT	
+
+CHECK_LONG_BEEP:
 	mov a, LONG_BEEP
-	cjne a, #0x01, FINISH_BEEPER
+	cjne a, #0x01, CHECK_OFF
 	;LONG BEEP ON
 FINISH_BEEPER:
 	; Reset the milli-seconds counter, it is a 16-bit variable
@@ -290,14 +263,14 @@ main:
 	lcall LCD_4BIT
 	; For convenience a few handy macros are included in 'LCD_4bit.inc':
 	setb half_seconds_flag
-	mov SEC, #0
+	mov SEC, #0x00
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
 	mov PWM_FLAG, PWM_OFF
 	mov PWM_OFF, #0
 	mov PWM_LOW, #20
 	mov PWM_HIGH, #100
-	mov SHORT_BEEP, #0
+	mov SHORT_BEEP, #0x01
 	mov SHORT_BEEP_COUNTER, #0
 	mov LONG_BEEP, #0
 	mov LONG_BEEP_COUNTER, #0
@@ -340,12 +313,12 @@ STATE0:
 	Wait_Milli_Seconds(#50); debounce time
 	jb START_BUTTON, STATE0_DONE
 	jnb START_BUTTON, $ ; Wait for key release
-	mov CURRENT_STATE, #0x01
-	mov SHORT_BEEP, #0x01
+	mov CURRENT_STATE, #1
 STATE0_DONE:
 	ljmp forever
 STATE1:
 	cjne a, #1, STATE2
+		
 	mov PWM_FLAG, PWM_HIGH
 	mov SEC, #0
 	mov a, #150
