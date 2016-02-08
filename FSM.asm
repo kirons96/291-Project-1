@@ -8,10 +8,21 @@ TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
+BAUD EQU 115200
+T2LOAD EQU (0x10000-(CLK/(16*BAUD)))
+
 BOOT_BUTTON     EQU P4.5 ;reset button
 SOUND_OUT       EQU P3.7
 PWM_PIN			EQU P0.0 ;change later
 START_BUTTON 	EQU P0.2 ;start button
+
+; Wiring for ADC
+;CE_ADC EQU P3.5
+;MY_MOSI EQU P3.4
+;MY_MISO EQU P3.3
+;MYSCLK EQU P3.2
+
+
 
 ; Reset vector
 org 0000H
@@ -46,8 +57,9 @@ Count1ms:     	ds 2 ; Used to determine when half second has passed
 CURRENT_STATE:	ds 1 ;current state 
 
 ;FSM VARIABLES
-SEC_COUNTER:	ds 1 ;timer
-TEMP:			ds 1 ;temperature
+SEC_COUNTER:	ds 2 ;timer
+SEC_COUNTER_TOTAL: ds 2 ; total run time
+TEMP:			ds 2 ;temperature
 
 ;PWM VARIABLES
 PWM_FLAG:		ds 1 ;
@@ -62,15 +74,25 @@ SHORT_BEEP_COUNTER: ds 1
 ;LONG_BEEP:		ds 1
 ;LONG_BEEP_COUNTER: ds 1
 
+;User settings variables
+buffer_temp: ds 2
+buffer_time: ds 2
+soak_temp: ds 2
+soak_time: ds 2
+reflow_temp: ds 2
+reflow_time: ds 2
+
+
 bseg
 half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
 start_reload_flag: dbit 1
-start_sec_counter_state2_flag: dbit 1
-start_sec_counter_state4_flag: dbit 1
+start_sec_counter: dbit 1
+start_sec_counter_total: dbit 1
 state3_transition_flag: dbit 1
 state5_transition_flag: dbit 1
 state_transition_beep_flag: dbit 1
 long_beep_flag: dbit 1
+six_short_beep_flag: dbit 1
 
 
 cseg
@@ -84,10 +106,31 @@ LCD_D6 equ P3.4
 LCD_D7 equ P3.5
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
+$include(tristan_lib.inc)
 $LIST
 
 ;
+;                          1234567890123456    <- This helps determine the position of the counter
+Stopped_Message:      db  'SHIET MANNNN    ', 0
+Stopped_Message2:     db  'restarting...   ', 0
+Finished_Message:     db  'Reflow complete!', 0
+Oven_Default_Message1: db 's:xxxs  xxxC xxx', 0
+Oven_Default_Message2: db 'r:xxxs  xxxC    ', 0
+Oven_Off_Message: db 'off', 0
+Oven_On_Message:  db 'run', 0
+Colon: db ':', 0
+Soak_Or_Reflow_Message1:   db '  soak  reflow  ', 0
+Soak_Or_Reflow_Message2:   db '  (up)  (down)  ', 0
+Time_Message:     db 'time: xxxxs     ', 0
+Temp_Message:     db 'temp: xxxxC     ', 0
+Okay_Message:     db 'xxxxs xxxxC  ok?', 0
+Continue:         db 'set to continue ', 0
+Clear:            db '                ', 0
+Space: db ' ', 0
 Display_State_Message:  db 'State:', 0
+Hello_World:  db  'Hello, World!', '\r', '\n', 0
+End_Transmission: db '\r', '\n', 0
+
 
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -132,7 +175,11 @@ beep_transition:
 	jb state_transition_beep_flag, long_beep_transition
 	cpl P3.7 ; turn on speaker
 long_beep_transition:
-	jb long_beep_flag, CHECK_OFF
+	jb long_beep_flag, six_short_beeps
+	cpl P3.7
+
+six_short_beeps:
+	jb six_short_beep_flag, CHECK_OFF
 	cpl P3.7
 	
 	;**************PWM**************
@@ -191,6 +238,9 @@ FINISH_T0:
 ; for timer 2                     ;
 ;---------------------------------;
 Timer2_Init:
+	push acc
+	push psw
+
 	mov T2CON, #0 ; Stop timer.  Autoreload mode.
 	; One millisecond interrupt
 	mov RCAP2H, #high(TIMER2_RELOAD)
@@ -203,6 +253,9 @@ Timer2_Init:
     setb ET2  ; Enable timer 2 interrupt
     setb TR2  ; Enable timer 2
     setb EA   ; Enable Global interrupts
+
+	pop psw
+	pop acc
 	ret
 
 ;---------------------------------;
@@ -225,10 +278,17 @@ Timer2_ISR:
 Inc_Done:
 	; Check if 1 second has passed
 	mov a, Count1ms+0
-	cjne a, #low(1000), Timer2_ISR_done
-	mov a, Count1ms+1
-	cjne a, #high(1000), Timer2_ISR_done
+	cjne a, #low(1000), jump_timer2_done 
 	
+	mov a, Count1ms+1
+	cjne a, #high(1000), jump_timer2_done
+	
+	sjmp second_passed	
+
+jump_timer2_done:
+	ljmp Timer2_ISR_done
+
+second_passed:
 	; 1 second has passed.  Set a flag so the main program knows
 	setb half_seconds_flag ; Let the main program know half second had passed
 	;cpl TR1 ; This line makes a beep-silence-beep-silence sound
@@ -237,17 +297,25 @@ Inc_Done:
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
-	
+	;***********Debug Temp Counter***	
 	mov a, TEMP
-	add a, #0x03
-	;da a 
+	cjne a, #0x99, no_overflow
+	;clr psw
+	clr a
+	da a
 	mov TEMP, a
-	; Increment the BCD counter
-	;mov a, SEC_COUNTER
-	;add a, #0x01
-	;da a
-	;mov SEC_COUNTER, a
-	
+	mov a, TEMP + 1
+	add a, #0x01
+	da a
+	mov TEMP + 1, a	
+	sjmp debug_counter_done
+
+no_overflow:
+	add a, #0x01
+	da a 
+	mov TEMP, a
+
+debug_counter_done:
 	;************BEEPER************
 	; condition to even consider SHORT_BEEP_COUNTER
 	jb start_reload_flag, state_transition_beeps ; if start_reload_flag in main is not yet set, skip over
@@ -272,7 +340,7 @@ state_transition_beeps:
 	
 	;********LONG BEEP*********
 long_beep:
-	jb long_beep_flag, check_transition_2_3
+	jb long_beep_flag, Check_SEC_COUNTER
 	mov a, SHORT_BEEP_COUNTER
 	add a, #0x01
 	da a
@@ -282,34 +350,83 @@ long_beep:
 	mov SHORT_BEEP_COUNTER, #0x00
 	
 	;****STATE TRANSITIONS*****
-check_transition_2_3:
-	;state 2->3 transition
-	jb start_sec_counter_state2_flag, check_transition_4_5 ; if state3_transition_flag in main is not yet set, skip over
+
+Check_SEC_COUNTER:
+	jnb start_sec_counter, Check_SEC_COUNTER_TOTAL
+
 	mov a, SEC_COUNTER
+	cjne a, #0x99, sec_counter_no_overflow
+	clr a
+	da a
+	mov SEC_COUNTER, a
+	mov a, SEC_COUNTER + 1
+	add a, #0x01
+	da a
+	mov SEC_COUNTER + 1, a
+	sjmp Timer2_ISR_done
+
+sec_counter_no_overflow:
 	add a, #0x01
 	da a
 	mov SEC_COUNTER, a
-	cjne a, #0x10, Timer2_ISR_done
-	cpl state3_transition_flag ; set state3_transition_flag for main 
-	cpl start_sec_counter_state2_flag ; clear flag
-	mov SEC_COUNTER, #0x00
-	
-check_transition_4_5:
-	;state 4->5 transition
-	jb start_sec_counter_state4_flag, Timer2_ISR_done ; if state3_transition_flag in main is not yet set, skip over
-	mov a, SEC_COUNTER
+
+Check_SEC_COUNTER_TOTAL:
+	jnb start_sec_counter_total, Timer2_ISR_done ;
+
+	mov a, SEC_COUNTER_TOTAL
+	cjne a, #0x99, sec_counter_total_no_overflow
+	clr a
+	da a
+	mov SEC_COUNTER_TOTAL, a
+	mov a, SEC_COUNTER_TOTAL + 1
 	add a, #0x01
 	da a
-	mov SEC_COUNTER, a
-	cjne a, #0x15, Timer2_ISR_done 
-	cpl state5_transition_flag ; set state5_transition_flag for main
-	cpl start_sec_counter_state4_flag ; clear flag
-	mov SEC_COUNTER, #0x00
+	mov SEC_COUNTER_TOTAL + 1, a
+	sjmp Timer2_ISR_done
+
+sec_counter_total_no_overflow:
+	add a, #0x01
+	da a
+	mov SEC_COUNTER_TOTAL, a
 	
 Timer2_ISR_done:
 	pop psw
 	pop acc
 	reti
+
+;---------------------------------;
+; Serial Stuff                    ;
+;                                 ;
+;---------------------------------;
+
+; Configure the serial port and baud rate using timer 2
+InitSerialPort:
+	clr TR2 ; Disable timer 2
+	mov T2CON, #30H ; RCLK=1, TCLK=1 
+	mov RCAP2H, #high(T2LOAD)  
+	mov RCAP2L, #low(T2LOAD)
+	setb TR2 ; Enable timer 2
+	mov SCON, #52H
+	ret
+
+; Send a character using the serial port
+putchar:
+	JNB TI, putchar
+	CLR TI
+	MOV SBUF, a
+	RET
+
+; Send a constant-zero-terminated string through the serial port
+SendString:
+	CLR A
+	MOVC A, @A+DPTR
+	JZ SendStringDone
+	LCALL putchar
+	INC DPTR
+	SJMP SendString
+SendStringDone:
+	ret
+
 
 ;---------------------------------;
 ; Main program. Includes hardware ;
@@ -320,100 +437,181 @@ main:
 	; Initialization
 	mov SP, #7FH
 	mov PMOD, #0 ; Configure all ports in bidirectional mode
-    lcall Timer0_Init
+
+        lcall Timer0_Init
 	lcall Timer2_Init
 	lcall LCD_4BIT
-	; For convenience a few handy macros are included in 'LCD_4bit.inc':
 	Set_Cursor(1, 1)			
 	Send_Constant_String(#Display_State_Message)
 	
+	; Flags
+	clr state3_transition_flag
 	setb half_seconds_flag
-	mov SEC_COUNTER, #0
+	clr start_sec_counter
+	clr start_sec_counter_total
+
+
+	mov SEC_COUNTER + 1, #0x00
+	mov SEC_COUNTER, #0x40
+
+	mov SEC_COUNTER_TOTAL + 1, #0x00
+	mov SEC_COUNTER_TOTAL, #0x00
+
 	mov CURRENT_STATE, #0
 	mov PWM_COUNTER, #0
 	mov PWM_FLAG, PWM_OFF
 	mov PWM_OFF, #0
 	mov PWM_LOW, #1 ;because weird bug (ask kiron)
 	mov PWM_HIGH, #10
-	;mov SHORT_BEEP, #0
 	mov SHORT_BEEP_COUNTER, #0x00
-	;mov LONG_BEEP, #0
-	;mov LONG_BEEP_COUNTER, #0
-	mov TEMP, #0
+
+	mov TEMP + 1, #0x01
+	mov TEMP, #0x40
+
+	mov soak_temp + 1, #0x01
+	mov soak_temp, #0x50
+
+	mov soak_time + 1, #0x00
+	mov soak_time, #0x60
+
+	mov reflow_temp + 1, #0x02
+	mov reflow_temp, #0x20
+
+	mov reflow_time + 1, #0x00
+	mov reflow_time, #0x45
+
 
 	; After initialization the program stays in this 'forever' loop
 forever:
-	jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb BOOT_BUTTON, loop_a  ; if the 'BOOT' button is not pressed skip
-	jnb BOOT_BUTTON, $		; wait for button release
-	; A clean press of the 'BOOT' button has been detected, reset the BCD counter.
-	; But first stop the timer and reset the milli-seconds counter, to resync everything.
+	sjmp loop_a
+
 	clr TR0
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	
-	mov SEC_COUNTER, #0x00
+
+
 	mov CURRENT_STATE, #0x00
 	mov PWM_COUNTER, #0x00
 	mov PWM_FLAG, PWM_OFF
-	;mov SHORT_BEEP, #0x00
 	mov SHORT_BEEP_COUNTER, #0x00
-	;mov LONG_BEEP, #0x00
-	;mov LONG_BEEP_COUNTER, #0x00
 	setb TR0                ; Re-enable the timer
 	sjmp loop_b             ; Display the new value
+
+
 loop_a:
 	jnb half_seconds_flag, forever
 loop_b:
-    clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
-	
+        clr half_seconds_flag ; We clear this flag in the main forever, but it is set in the ISR for timer 0
+
+	; show debug temp counter
+	Set_Cursor(2, 1)
+	Display_BCD(TEMP + 1)
+	Set_Cursor(2, 3)
+	Display_BCD(TEMP)
+
+	; show state second timer
+	Set_Cursor(2, 6)
+	Display_BCD(SEC_COUNTER + 1)
+	Set_Cursor(2, 8)
+	Display_BCD(SEC_COUNTER)
+
+	; show state second timer
+	Set_Cursor(2, 11)
+	Display_BCD(SEC_COUNTER_TOTAL + 1)
+	Set_Cursor(2, 13)
+	Display_BCD(SEC_COUNTER_TOTAL)
+
+	; Serial	
+	clr EA ; mask interrupts
+	lcall InitSerialPort
+	mov a, TEMP
+	lcall putchar
+	mov dptr, #End_Transmission
+	lcall SendString
+	Wait_Milli_Seconds(#1)
+	lcall Timer2_Init
+
 	mov a, CURRENT_STATE
+
 STATE0:
 	cjne a, #0x00, STATE1 ; change this back to STATE1
 	mov PWM_FLAG, PWM_OFF
 	Set_Cursor(1, 7)			
 	Display_BCD(#0)
 	cpl P0.1 ; to test if state 5->0 transition works correctly
-	jb P0.2, forever
+
+	jb P0.2, STATE0_DONE
 	jnb P0.2, $ ; Wait for key release
+
 	cpl start_reload_flag ; set start_reload_flag.....this beep indicates START = YES & transition to STATE 1
 	mov CURRENT_STATE, #0x01 ; change this back to #0x01
-	;cpl start_sec_counter_state2_flag ; set flag to start incrementing SEC_COUNTER to 60s (WON'T NEED THIS LINE)
 STATE0_DONE:
 	ljmp forever
+
+STOPPED:
+	Set_Cursor(1, 1)
+	Send_Constant_String(#Stopped_Message)
+	Set_Cursor(2, 1)
+	Send_Constant_String(#Stopped_Message2)
+	mov R4, #0xF
+STOPPED_REPEAT:
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	djnz R4, STOPPED_REPEAT
+
+	ljmp main
 	
 STATE1:
-	cpl P0.1
+	Button(START_BUTTON, STOPPED, STATEONE)
+STATEONE:
 	cjne a, #0x01, STATE2
+	setb start_sec_counter_total
 	Set_Cursor(1, 7)			
 	Display_BCD(#1)
 	mov PWM_FLAG, PWM_HIGH
-	;mov SEC_COUNTER, #0x00
-	mov a, #150
-	;mov TEMP, #160
+
+	mov a, TEMP + 1
+	cjne a, soak_temp + 1, STATE1_DONE
+	mov a, soak_temp
 	clr c
 	subb a, TEMP
 	jnc STATE1_DONE
+
 	mov CURRENT_STATE, #0x02
 	cpl state_transition_beep_flag ; short beep to indicate change of state
-	cpl start_sec_counter_state2_flag ; set flag to start incrementing SEC_COUNTER to 60s
+	
+	mov SEC_COUNTER + 1, #0x00
+	mov SEC_COUNTER, #0x50
+
 STATE1_DONE:
 	ljmp forever
 	
 STATE2:
 	cjne a, #0x02, STATE3 ; change this back to STATE3
+
+	setb start_sec_counter; set flag to start incrementing SEC_COUNTER to 60s
+
 	Set_Cursor(1, 7)			
 	Display_BCD(#2)
-	;cpl P0.1
+
 	mov PWM_FLAG, PWM_LOW
-	jb state3_transition_flag, STATE2_DONE ; if state3_transition_flag is not yet set, skip over
-	cpl P0.1; to test correct change of state
-	;mov PWM_FLAG, PWM_LOW
+
+	mov a, SEC_COUNTER + 1
+	cjne a, soak_time + 1, STATE2_DONE
+	mov a, SEC_COUNTER
+	cjne a, soak_time, STATE2_DONE
+
+	clr start_sec_counter
+	mov SEC_COUNTER + 1, #0x00
+	mov SEC_COUNTER, #0x00
 	mov CURRENT_STATE, #0x03 ; change this back to #0x03
 	cpl state_transition_beep_flag ; short beep flag to indicate change of state
-	;cpl start_sec_counter_state4_flag ; set flag to start incrementing SEC_COUNTER to 45s (WON'T NEED THIS LINE)
+	
+	mov TEMP + 1, #0x02
+	mov TEMP, #0x10
+
 STATE2_DONE:
 	ljmp forever
 	
@@ -423,47 +621,99 @@ STATE3:
 	Set_Cursor(1, 7)			
 	Display_BCD(#3)
 	mov PWM_FLAG, PWM_HIGH
-	;mov SEC_COUNTER, #0x00
-	mov a, #220
-	;mov TEMP, #225
+
+	mov a, TEMP + 1
+	cjne a, reflow_temp + 1, STATE3_DONE
+	mov a, reflow_temp
 	clr c
 	subb a, TEMP
 	jnc STATE3_DONE
+
 	mov CURRENT_STATE, #0x04
-	cpl start_sec_counter_state4_flag ; set flag to start incrementing SEC_COUNTER to 45s
 	cpl state_transition_beep_flag ; set flag to short beep to indicate change of state
+
+	mov SEC_COUNTER + 1, #0x00
+	mov SEC_COUNTER, #0x35
+
 STATE3_DONE:
 	ljmp forever
 	
 STATE4:
 	cjne a, #0x04, STATE5
+
 	Set_Cursor(1, 7)			
 	Display_BCD(#4)
-	cpl P0.7
+
+	setb start_sec_counter
+
 	mov PWM_FLAG, PWM_LOW
-	jb state5_transition_flag, STATE4_DONE ; if state5_transition_flag is not yet set, skip over
-	;cpl P0.7 ; to test the transition from STATE2 to STATE4
-	;mov PWM_FLAG, PWM_LOW
+
+	mov a, SEC_COUNTER + 1
+	cjne a, reflow_time + 1, STATE4_DONE
+	mov a, SEC_COUNTER
+	cjne a, reflow_time, STATE4_DONE
+
 	mov CURRENT_STATE, #0x05
-	cpl state_transition_beep_flag ;  set flag to short beep to indicate change of state
+	clr start_sec_counter
+	mov SEC_COUNTER + 1, #0x00
+	mov SEC_COUNTER, #0x00
+	cpl long_beep_flag
+
+	mov TEMP + 1, #0x00
+	mov TEMP, #0x65
+
 STATE4_DONE:
 	ljmp forever
 	
 STATE5:
 	cpl P0.7
 	cjne a, #0x05, STATE5_DONE
+
 	Set_Cursor(1, 7)			
 	Display_BCD(#5)
-	;mov CURRENT_STATE, #0x00 ; to test change of state from 5->0
-	;cpl long_beep_flag ; to test to see if long beep feedback works correctly
-	;ljmp STATE5_DONE ; to test (WON'T NEED THIS LINE)
+
 	mov PWM_FLAG, PWM_OFF
+
+	mov a, TEMP + 1
+	cjne a, #0x00, STATE3_DONE
 	mov a, TEMP
-	mov R1, #0x60
+	mov R3, #0x60
 	clr c
-	subb a, R1
-	jnc STATE5_DONE
-	mov CURRENT_STATE, #0x00
-	cpl long_beep_flag
+	subb a, R3
+	jnc FINISH_BEEP
+
 STATE5_DONE:
 	ljmp forever
+
+FINISH_BEEP:
+	Set_Cursor(1, 1)
+	Send_Constant_String(#Finished_Message)
+	Set_Cursor(2, 1)
+	Send_Constant_String(#Stopped_Message2)
+
+	mov CURRENT_STATE, #0x00
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	Wait_Milli_Seconds(#255)
+	mov R2, #0x9
+DECREMENT_LABEL:
+	cpl six_short_beep_flag
+	Wait_Milli_Seconds(#255)
+	;Wait_Milli_Seconds(#255)
+	;Wait_Milli_Seconds(#255)
+	djnz R2, DECREMENT_LABEL
+	cpl six_short_beep_flag
+	ljmp main
+
+
+
+
+
+
+
+
+
