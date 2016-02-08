@@ -144,17 +144,23 @@ Display:
 	mov x+1, Result+1
 	mov x+2, #0
 	mov x+3, #0
-	load_y(50000)
-	lcall mul32
-	load_y(1023)
+	Load_y(10000)
+	lcall mul32 ;result*10k avoids 
+	Load_y(1023)
 	lcall div32
-	load_y(23)
+	Load_y(5)
+	lcall mul32 ;gets Vout*100k
+	Load_y(100)
+	lcall mul32 ; Vout*100
+	Load_y(273)
+	lcall sub32 ;gives temp*10000
+	Load_y(10000)
+	lcall div32
+	Load_y(273)
 	lcall sub32
-	load_y(41)
-	lcall div32 
-	load_y(273)
-	lcall sub32
-	lcall hex2bcd
+	mov Result+0 , x+0 
+	mov Result+1 , x+1 
+	
 	
 	;result 1 manipulation................................................
 	mov x+0, Result1+0
@@ -171,9 +177,14 @@ Display:
 	lcall div32 
 	load_y(273)
 	lcall sub32
-	lcall hex2bcd
+	
 	
 	;add the two...............................................................
+	
+	mov x+0, Result+0
+	mov x+1, Result+1
+	mov x+2, #0
+	mov x+3, #0
 	
 	mov x+0, Result+0
 	mov x+1, Result+1
