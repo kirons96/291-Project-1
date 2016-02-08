@@ -4,7 +4,7 @@ import time
 import serial
 import serial.tools.list_ports
 import sys
-import convert
+import Kconvert
 
 top = Tk()
 top.resizable(0,0)
