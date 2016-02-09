@@ -105,7 +105,7 @@ Forever:
 	
 	mov R0, #00000001B ; Start bit:1
 	lcall DO_SPI_G
-	mov R0, #10000001B ; Single ended, read channel 
+	mov R0, #10010000B ; Single ended, read channel 
 	lcall DO_SPI_G
 	mov a, R1 ; R1 contains bits 8 and 9
 	anl a, #00000011B ; We need only the two least significant bits
@@ -144,20 +144,18 @@ Display:
 	mov x+1, Result+1
 	mov x+2, #0
 	mov x+3, #0
-	Load_y(10000)
-	lcall mul32 ;result*10k avoids 
-	Load_y(1023)
+	load_y(50000)
+	lcall mul32
+	load_y(1023)
 	lcall div32
-	Load_y(5)
-	lcall mul32 ;gets Vout*100k
-	Load_y(100)
-	lcall mul32 ; Vout*100
-	Load_y(273)
-	lcall sub32 ;gives temp*10000
-	Load_y(10000)
-	lcall div32
-	Load_y(273)
+	load_y(23)
 	lcall sub32
+	load_y(41)
+	lcall div32 
+	
+	
+	
+	
 	mov Result+0 , x+0 
 	mov Result+1 , x+1 
 	
@@ -167,24 +165,27 @@ Display:
 	mov x+1, Result1+1
 	mov x+2, #0
 	mov x+3, #0
-	load_y(50000)
-	lcall mul32
 	load_y(1023)
 	lcall div32
+	load_y(5)
+	lcall mul32
+	load_y(273)
+	lcall sub32
+	load_y(10000)
+	lcall mul32
 	load_y(23)
 	lcall sub32
 	load_y(41)
-	lcall div32 
-	load_y(273)
-	lcall sub32
+	lcall div32
+	
+	mov Result1+0 , x+0 
+	mov Result1+1 , x+1 
+	;load_y(273)
+	;lcall sub32
 	
 	
 	;add the two...............................................................
 	
-	mov x+0, Result+0
-	mov x+1, Result+1
-	mov x+2, #0
-	mov x+3, #0
 	
 	mov x+0, Result+0
 	mov x+1, Result+1

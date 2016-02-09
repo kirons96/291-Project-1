@@ -234,7 +234,7 @@
 037E            105            
 037E 7801       106            mov R0, #00000001B ; Start bit:1
 0380 120326     107            lcall DO_SPI_G
-0383 7881       108            mov R0, #10000001B ; Single ended, read channel 
+0383 7890       108            mov R0, #10010000B ; Single ended, read channel 
 0385 120326     109            lcall DO_SPI_G
 0388 E9         110            mov a, R1 ; R1 contains bits 8 and 9
 0389 5403       111            anl a, #00000011B ; We need only the two least significant bits
@@ -309,97 +309,109 @@
 0408 753A00     153            mov y+2, #low (41 / 0x10000) 
 040B 753B00     153            mov y+3, #high(41 / 0x10000) 
 040E 1202B8     154            lcall div32 
-0411 753811     155            mov y+0, #low (273 % 0x10000) 
-0414 753901     155            mov y+1, #high(273 % 0x10000) 
-0417 753A00     155            mov y+2, #low (273 / 0x10000) 
-041A 753B00     155            mov y+3, #high(273 / 0x10000) 
-041D 120197     156            lcall sub32
-0420 1200B1     157            lcall hex2bcd
-0423            158            
-0423            159            ;result 1 manipulation................................................
-0423 853234     160            mov x+0, Result1+0
-0426 853335     161            mov x+1, Result1+1
-0429 753600     162            mov x+2, #0
-042C 753700     163            mov x+3, #0
-042F 753850     164            mov y+0, #low (50000 % 0x10000) 
-0432 7539C3     164            mov y+1, #high(50000 % 0x10000) 
-0435 753A00     164            mov y+2, #low (50000 / 0x10000) 
-0438 753B00     164            mov y+3, #high(50000 / 0x10000) 
-043B 12022B     165            lcall mul32
-043E 7538FF     166            mov y+0, #low (1023 % 0x10000) 
-0441 753903     166            mov y+1, #high(1023 % 0x10000) 
-0444 753A00     166            mov y+2, #low (1023 / 0x10000) 
-0447 753B00     166            mov y+3, #high(1023 / 0x10000) 
-044A 1202B8     167            lcall div32
-044D 753817     168            mov y+0, #low (23 % 0x10000) 
-0450 753900     168            mov y+1, #high(23 % 0x10000) 
-0453 753A00     168            mov y+2, #low (23 / 0x10000) 
-0456 753B00     168            mov y+3, #high(23 / 0x10000) 
-0459 120197     169            lcall sub32
-045C 753829     170            mov y+0, #low (41 % 0x10000) 
-045F 753900     170            mov y+1, #high(41 % 0x10000) 
-0462 753A00     170            mov y+2, #low (41 / 0x10000) 
-0465 753B00     170            mov y+3, #high(41 / 0x10000) 
-0468 1202B8     171            lcall div32 
-046B 753811     172            mov y+0, #low (273 % 0x10000) 
-046E 753901     172            mov y+1, #high(273 % 0x10000) 
-0471 753A00     172            mov y+2, #low (273 / 0x10000) 
-0474 753B00     172            mov y+3, #high(273 / 0x10000) 
-0477 120197     173            lcall sub32
-047A 1200B1     174            lcall hex2bcd
-047D            175            
-047D            176            ;add the two...............................................................
-047D            177            
-047D 853034     178            mov x+0, Result+0
-0480 853135     179            mov x+1, Result+1
-0483 753600     180            mov x+2, #0
-0486 753700     181            mov x+3, #0
-0489 853238     182            mov y+0, Result1+0
-048C 853339     183            mov y+1, Result1+1
-048F 753A00     184            mov y+2, #0
-0492 753B00     185            mov y+3, #0
-0495 120176     186            lcall add32
-0498 1200B1     187            lcall hex2bcd
-049B            188            
-049B            189            
-049B E53D       190            mov a, bcd+1
-049D C4         191            swap a
-049E 540F       192            anl a, #0x0f
-04A0 4430       193            orl a, #0x30
-04A2 12034F     194            lcall putchar
-04A5            195   
-04A5 E53D       196            mov a, bcd+1
-04A7 540F       197            anl a, #0x0f
-04A9 4430       198            orl a, #0x30
-04AB 12034F     199            lcall putchar
-04AE            200   
-04AE E53C       201            mov a, bcd+0
-04B0 C4         202            swap a
-04B1 540F       203            anl a, #0x0f
-04B3 4430       204            orl a, #0x30
-04B5 12034F     205            lcall putchar
-04B8            206   
-04B8 E53C       207            mov a, bcd+0
-04BA 540F       208            anl a, #0x0f
-04BC 4430       209            orl a, #0x30
-04BE 12034F     210            lcall putchar
-04C1            211            
-04C1 C0E0       212            push acc
-04C3 740A       212            mov a, #10
-04C5 14         212            dec a
-04C6 120096     212            lcall ?Set_Cursor_1 ; Select column and row
-04C9 D0E0       212            pop acc
-04CB C000       213            push ar0
-04CD A83C       213            mov r0, bcd
-04CF 12009B     213            lcall ?Display_BCD
-04D2 D000       213            pop ar0
-04D4            214   
-04D4            215   Continue:
-04D4 740D       216            mov a, #'\r'
-04D6 12034F     217            lcall putchar
-04D9 740A       218            mov a, #'\n'
-04DB 12034F     219            lcall putchar
-04DE            220            
-04DE 22         221   ret
-04DF            222       
-04DF            223   EN
+0411            155            
+0411            156            
+0411            157            
+0411            158            
+0411 853430     159            mov Result+0 , x+0 
+0414 853531     160            mov Result+1 , x+1 
+0417            161            
+0417            162            
+0417            163            ;result 1 manipulation................................................
+0417 853234     164            mov x+0, Result1+0
+041A 853335     165            mov x+1, Result1+1
+041D 753600     166            mov x+2, #0
+0420 753700     167            mov x+3, #0
+0423 7538FF     168            mov y+0, #low (1023 % 0x10000) 
+0426 753903     168            mov y+1, #high(1023 % 0x10000) 
+0429 753A00     168            mov y+2, #low (1023 / 0x10000) 
+042C 753B00     168            mov y+3, #high(1023 / 0x10000) 
+042F 1202B8     169            lcall div32
+0432 753805     170            mov y+0, #low (5 % 0x10000) 
+0435 753900     170            mov y+1, #high(5 % 0x10000) 
+0438 753A00     170            mov y+2, #low (5 / 0x10000) 
+043B 753B00     170            mov y+3, #high(5 / 0x10000) 
+043E 12022B     171            lcall mul32
+0441 753811     172            mov y+0, #low (273 % 0x10000) 
+0444 753901     172            mov y+1, #high(273 % 0x10000) 
+0447 753A00     172            mov y+2, #low (273 / 0x10000) 
+044A 753B00     172            mov y+3, #high(273 / 0x10000) 
+044D 120197     173            lcall sub32
+0450 753810     174            mov y+0, #low (10000 % 0x10000) 
+0453 753927     174            mov y+1, #high(10000 % 0x10000) 
+0456 753A00     174            mov y+2, #low (10000 / 0x10000) 
+0459 753B00     174            mov y+3, #high(10000 / 0x10000) 
+045C 12022B     175            lcall mul32
+045F 753817     176            mov y+0, #low (23 % 0x10000) 
+0462 753900     176            mov y+1, #high(23 % 0x10000) 
+0465 753A00     176            mov y+2, #low (23 / 0x10000) 
+0468 753B00     176            mov y+3, #high(23 / 0x10000) 
+046B 120197     177            lcall sub32
+046E 753829     178            mov y+0, #low (41 % 0x10000) 
+0471 753900     178            mov y+1, #high(41 % 0x10000) 
+0474 753A00     178            mov y+2, #low (41 / 0x10000) 
+0477 753B00     178            mov y+3, #high(41 / 0x10000) 
+047A 1202B8     179            lcall div32
+047D            180            
+047D 853432     181            mov Result1+0 , x+0 
+0480 853533     182            mov Result1+1 , x+1 
+0483            183            ;load_y(273)
+0483            184            ;lcall sub32
+0483            185            
+0483            186            
+0483            187            ;add the two...............................................................
+0483            188            
+0483            189            
+0483 853034     190            mov x+0, Result+0
+0486 853135     191            mov x+1, Result+1
+0489 753600     192            mov x+2, #0
+048C 753700     193            mov x+3, #0
+048F 853238     194            mov y+0, Result1+0
+0492 853339     195            mov y+1, Result1+1
+0495 753A00     196            mov y+2, #0
+0498 753B00     197            mov y+3, #0
+049B 120176     198            lcall add32
+049E 1200B1     199            lcall hex2bcd
+04A1            200            
+04A1            201            
+04A1 E53D       202            mov a, bcd+1
+04A3 C4         203            swap a
+04A4 540F       204            anl a, #0x0f
+04A6 4430       205            orl a, #0x30
+04A8 12034F     206            lcall putchar
+04AB            207   
+04AB E53D       208            mov a, bcd+1
+04AD 540F       209            anl a, #0x0f
+04AF 4430       210            orl a, #0x30
+04B1 12034F     211            lcall putchar
+04B4            212   
+04B4 E53C       213            mov a, bcd+0
+04B6 C4         214            swap a
+04B7 540F       215            anl a, #0x0f
+04B9 4430       216            orl a, #0x30
+04BB 12034F     217            lcall putchar
+04BE            218   
+04BE E53C       219            mov a, bcd+0
+04C0 540F       220            anl a, #0x0f
+04C2 4430       221            orl a, #0x30
+04C4 12034F     222            lcall putchar
+04C7            223            
+04C7 C0E0       224            push acc
+04C9 740A       224            mov a, #10
+04CB 14         224            dec a
+04CC 120096     224            lcall ?Set_Cursor_1 ; Select column and row
+04CF D0E0       224            pop acc
+04D1 C000       225            push ar0
+04D3 A83C       225            mov r0, bcd
+04D5 12009B     225            lcall ?Display_BCD
+04D8 D000       225            pop ar0
+04DA            226   
+04DA            227   Continue:
+04DA 740D       228            mov a, #'\r'
+04DC 12034F     229            lcall putchar
+04DF 740A       230            mov a, #'\n'
+04E1 12034F     231            lcall putchar
+04E4            232            
+04E4 22         233   ret
+04E5            234       
+04E5            235   EN
