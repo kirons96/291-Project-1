@@ -22,8 +22,6 @@ START_BUTTON 	EQU P0.2 ;start button
 ;MY_MISO EQU P3.3
 ;MYSCLK EQU P3.2
 
-
-
 ; Reset vector
 org 0000H
     ljmp main
@@ -55,6 +53,11 @@ org 002BH
 dseg at 30h
 Count1ms:     	ds 2 ; Used to determine when half second has passed
 CURRENT_STATE:	ds 1 ;current state 
+
+;math32.inc variables
+x:   ds 4
+y:   ds 4
+bcd: ds 5
 
 ;FSM VARIABLES
 SEC_COUNTER:	ds 2 ;timer
@@ -94,6 +97,9 @@ state_transition_beep_flag: dbit 1
 long_beep_flag: dbit 1
 six_short_beep_flag: dbit 1
 
+;for math32.inc
+mf: dbit 1
+
 
 cseg
 ; These 'equ' must match the wiring between the microcontroller and the LCD!
@@ -107,6 +113,7 @@ LCD_D7 equ P3.5
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $include(tristan_lib.inc)
+$include(math32.inc)
 $LIST
 
 ;
